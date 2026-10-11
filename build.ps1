@@ -25,7 +25,7 @@ foreach ($file in @('README.md', 'THIRD-PARTY-NOTICES.md', 'setup-mvolt.ps1')) {
 Copy-Item -LiteralPath (Join-Path $root 'licenses') -Destination $output -Recurse
 Copy-Item -LiteralPath (Join-Path $root 'docs') -Destination $output -Recurse
 Copy-Item -LiteralPath (Join-Path $root 'tools') -Destination $output -Recurse
-$zip = Join-Path (Split-Path $output) 'Prophecy-Power-Unlocker-1.2.1-win-x64.zip'
+$zip = Join-Path (Split-Path $output) 'Prophecy-Power-Unlocker-1.2.2-win-x64.zip'
 Compress-Archive -LiteralPath $output -DestinationPath $zip
 $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
 "$hash  $(Split-Path $zip -Leaf)" | Set-Content -LiteralPath (Join-Path (Split-Path $zip) 'SHA256SUMS.txt') -Encoding ascii

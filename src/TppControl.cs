@@ -9,6 +9,9 @@ internal static class TppControl{
   if(field!=PcfPowerFields.ACTargetTPPLimit&&field!=PcfPowerFields.ACMaxGPULimit)throw new ArgumentException("Unsupported platform field.");
   string machine="";using(var q=new ManagementObjectSearcher("SELECT Manufacturer,Model FROM Win32_ComputerSystem"))foreach(ManagementObject x in q.Get())machine=Convert.ToString(x["Manufacturer"])+" "+Convert.ToString(x["Model"]);
   string gpu=SystemProbe.GetGpuName(),pci=SystemProbe.FindNvidiaDeviceInstanceId(gpu);using var pcf=new PcfPowerController();var v=pcf.GetPowerValues();uint current=field==PcfPowerFields.ACTargetTPPLimit?v.ACTargetTPPLimitInMilliwatts:v.ACMaxGPULimitInMilliwatts;int? stock=null,max=null;
+  using(var q=new ManagementObjectSearcher("SELECT SMBIOSBIOSVersion FROM Win32_BIOS"))foreach(ManagementObject x in q.Get())machine+=" | BIOS "+Convert.ToString(x["SMBIOSBIOSVersion"]);
+  machine+=" | NVIDIA "+SystemProbe.GetDriverVersion()+" | PCF "+pcf.ControllerIndex+"/"+pcf.LayoutVersion;
+  machine+=" | VBIOS "+SystemProbe.GetVbios();
   try{using var q=new ManagementObjectSearcher(@"root\HP\InstrumentedBIOS","SELECT * FROM HP_BIOSInteger");foreach(ManagementObject x in q.Get()){
    string name=Convert.ToString(x["Name"])??"";if(!(field==PcfPowerFields.ACTargetTPPLimit?(name.Contains("TPP",StringComparison.OrdinalIgnoreCase)||name.Contains("Total Platform Power",StringComparison.OrdinalIgnoreCase)):(name.Contains("ACMaxGPULimit",StringComparison.OrdinalIgnoreCase)||name.Contains("GPU Max Power",StringComparison.OrdinalIgnoreCase))))continue;
    object? Read(string key)=>x.Properties.Cast<PropertyData>().FirstOrDefault(p=>p.Name.Equals(key,StringComparison.OrdinalIgnoreCase))?.Value;
