@@ -18,15 +18,7 @@ namespace NvpwrControlBlackwell
 
         public static string RunProcess(string file, string args, int timeoutMs, bool createNoWindow, out int exitCode)
         {
-            ProcessStartInfo psi = new ProcessStartInfo();
-            psi.FileName = file;
-            psi.Arguments = args;
-            psi.UseShellExecute = false;
-            psi.CreateNoWindow = createNoWindow;
-            if (!createNoWindow)
-                psi.WindowStyle = ProcessWindowStyle.Hidden;
-            psi.RedirectStandardOutput = true;
-            psi.RedirectStandardError = true;
+            ProcessStartInfo psi = ProcessOptions(file,args,createNoWindow);
 
             using (Process p = Process.Start(psi))
             {
@@ -41,6 +33,15 @@ namespace NvpwrControlBlackwell
                 exitCode = p.ExitCode;
                 return stdoutTask.GetAwaiter().GetResult() + stderrTask.GetAwaiter().GetResult();
             }
+        }
+
+        internal static ProcessStartInfo ProcessOptions(string file,string args,bool createNoWindow)
+        {
+            return new ProcessStartInfo(file,args) {
+                UseShellExecute=false, CreateNoWindow=createNoWindow,
+                WindowStyle=ProcessWindowStyle.Hidden,
+                RedirectStandardOutput=true, RedirectStandardError=true
+            };
         }
 
         public static string RunNvidiaSmi(string args)

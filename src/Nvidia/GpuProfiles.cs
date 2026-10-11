@@ -17,6 +17,12 @@ namespace NvpwrControlBlackwell
         public bool AllowMsvdd;
         public int[] KnownDeviceIds = new int[0];
         public int[] AlternativeStockWatts = null;
+        public int StockTgpMaxW => Id switch {
+            "5050" or "5060" or "5070" => 115,
+            "5070ti" or "4050" or "4060" or "4070" => 140,
+            "5080" or "5090" or "4080" or "4090" => 175,
+            _ => 0
+        };
 
         public int MinW
         {

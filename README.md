@@ -1,5 +1,9 @@
 # Prophecy Power Unlocker
 
+## Resolving an unknown VBIOS
+
+This local package includes the Blackwell `nvflashb.exe` release from https://github.com/WillyBilly06/NVFLASH/releases/tag/Release in `tools`. Click the automatic VBIOS resolver to use it. If it is missing, select `nvflashb.exe` or `nvflash64.exe` when prompted. The app remembers its location, uses read-only ROM dump commands for resolution, and validates the dump against your GPU/VBIOS. You can also select your own GPU's ROM directly. Local driver/VBIOS validation persists in `%ProgramData%\ProphecyPowerUnlocker\validation`; no other user's validation is bundled.
+
 Windows control panel combining NVIDIA laptop power control and telemetry, HP Victus platform controls, and optional mVolt profile import.
 
 [Download the Windows release](https://github.com/bobshmo/Prophecy-Power-Unlocker/releases/latest)
@@ -11,7 +15,7 @@ Windows control panel combining NVIDIA laptop power control and telemetry, HP Vi
 - NVIDIA clock and voltage tuning where the installed driver exposes the controls.
 - HP Victus Fan Max with readback. HPCM performance mode is requested immediately before each NVIDIA CURRENT write on Victus; rejection stops the write.
 - Separate CPU sustained/STAPM, Fast PPT, Slow PPT, APU Slow, skin power and temperature controls for Ryzen AI 7 350, Family 26 Model 96.
-- HP TPP, PCF GPU maximum, and PLGPU controls.
+- HP TPP and PLGPU controls, plus **PCF Max (HP unlock)** on Power. The toggle writes only the detected GPU stock ceiling including Dynamic Boost (115/140/175 W), independently of NVIDIA MAX. A detected lower PCF cap is enabled automatically on HP; other manufacturers receive an opt-in dialog. Disabling restores the saved device-specific original PCF cap. No custom PCF wattage field is exposed.
 - Optional official mVolt integration: select its executable, import your own saved v3 profile, review and apply it against a matching adapter/VBIOS.
 
 No personal overclock profile, saved tuning settings, ROM dump, resolver cache or registry backup is included. Clock offsets and automatic reapplication start disabled.
@@ -51,3 +55,11 @@ Install a .NET SDK capable of targeting .NET 8 on Windows, then run:
 This restores dependencies, builds, runs hardware-free self-tests, and publishes a self-contained Windows x64 folder and ZIP under `artifacts`. No GPU setting is changed by the tests. Bundled managed libraries remain separate and replaceable.
 
 The original NVIDIA backend is credited to [timmyy123/nvidia-power-control](https://github.com/timmyy123/nvidia-power-control), with local fixes for active registry mapping, VBIOS identity handling, telemetry, integration and laptop mapping. HP/CPU access uses [OmenCore](https://github.com/theantipopau/omencore). See [third-party notices](THIRD-PARTY-NOTICES.md) for component provenance and licensing; this repository does not apply a blanket license to third-party code.
+
+## Firmware controls
+
+Compatibility includes Backup ROM, Import ROM, and Flash imported ROM. Import checks NVIDIA PCI images against the detected GPU. Flash requires confirmation, rechecks GPU/file identity, retains a before-flash backup, and opens the interactive NVFlashB window. The app adds no board-ID bypass or protection-disable flags. A successful utility exit is not independent verification of the activated firmware. Firmware flashing has not been tested on physical hardware during development.
+
+## Unified controls and HP WMI scan
+
+One NVIDIA-style navigation bar contains Power, Tuning, Telemetry, Compatibility, CPU / HP, Profiles and Settings. CURRENT accepts positive whole-watt values up to live MAX in 1 W steps. HP WMI scanning reports thermal policy and Extreme/Unleashed support/unlock flags. Its toggle applies Legacy Performance for policy V0 or Performance for V1+, and prepares subsequent Victus CURRENT writes. This is a firmware-compatible recommendation, not a measurement of optimal performance. An unverified Unleashed command is not exposed. Actual hardware behavior of the new automatic PCF and WMI toggles remains pending confirmation.

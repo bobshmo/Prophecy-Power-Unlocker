@@ -16,8 +16,7 @@ internal sealed class SuiteForm : Form
         Text = "Prophecy Power Unlocker";
         ClientSize = new Size(1380, 970); MinimumSize = new Size(1050, 820);
         StartPosition = FormStartPosition.CenterScreen;
-        var tabs = new TabControl { Dock = DockStyle.Fill, Font = new Font("Segoe UI", 11) };
-        Controls.Add(tabs);
+        _nvidia.TopLevel=false; _nvidia.FormBorderStyle=FormBorderStyle.None; _nvidia.Dock=DockStyle.Fill; Controls.Add(_nvidia);
         var fanBar = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 42, Padding = new Padding(10, 6, 0, 0), BackColor = Color.FromArgb(32, 37, 47), ForeColor = Color.White };
         var fanToggle = new CheckBox { Text = "Fan Max", ForeColor = Color.White, AutoSize = true, Enabled = false, ThreeState = true, CheckState = CheckState.Indeterminate };
         var fanStatus = new Label { Text = "Reading fans…", AutoSize = true, Padding = new Padding(12, 3, 0, 0) };
@@ -55,17 +54,24 @@ internal sealed class SuiteForm : Form
         fanRefresh.Click += async (_, _) => await ReadFans();
         if (captureDirectory == null && HpPlatform.IsVictus) Shown += async (_, _) => await ReadFans();
         else { fanStatus.Text = captureDirectory != null ? "Preview · HPCM precedes GPU CURRENT on HP Victus." : "Fan Max is available on HP Victus only."; fanRefresh.Enabled = false; }
-        if (captureDirectory != null || HpPlatform.IsVictus) AddForm(tabs, "HP Victus controls", _victus);
-        AddForm(tabs, "NVIDIA power & telemetry", _nvidia);
-        _victus.OpenNvidiaRequested += () => tabs.SelectedIndex = tabs.TabPages.Count == 3 ? 1 : 0;
-        var page = new TabPage("mVolt profiles");
-        _mvolt.Dock = DockStyle.Fill; page.Controls.Add(_mvolt); tabs.TabPages.Add(page);
+        if (captureDirectory != null || HpPlatform.IsVictus) {
+            _victus.TopLevel=false; _victus.FormBorderStyle=FormBorderStyle.None;
+            _nvidia.AddUnifiedPage("victus","CPU / HP",_victus); _victus.Show();
+        }
+        _nvidia.AddUnifiedPage("profiles","Profiles",_mvolt);
+        _victus.OpenNvidiaRequested+=()=>_nvidia.SelectUnifiedPage("power");
+        _nvidia.Show();
+        if(captureDirectory==null)Shown+=async(_,_)=>{
+            while(_nvidia.OperationBusy)await Task.Delay(200);
+            await _nvidia.DetectPcfAsync();
+        };
         if (captureDirectory != null) Shown += async (_, _) =>
         {
             Directory.CreateDirectory(captureDirectory);
-            for (int i = 0; i < tabs.TabCount; i++)
+            string[] pages={"power","tuning","telemetry","compatibility","victus","profiles"};
+            for (int i = 0; i < pages.Length; i++)
             {
-                tabs.SelectedIndex = i; await Task.Delay(200);
+                _nvidia.SelectUnifiedPage(pages[i]); await Task.Delay(200);
                 using var bitmap = new Bitmap(ClientSize.Width, ClientSize.Height);
                 DrawToBitmap(bitmap, ClientRectangle); bitmap.Save(Path.Combine(captureDirectory, $"suite-{i}.png"));
             }

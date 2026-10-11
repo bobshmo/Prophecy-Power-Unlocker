@@ -11,10 +11,7 @@ namespace NvpwrControlBlackwell
         private const string Known61714ImplSha = "ff1527cea533c75f89033f7c0d9cdbaa6ec84bcac26c1db082227d68efd6a16e";
         private const string Known61714KmdSha = "101ae659a3cbaec04a749559cf227c87e9b5d310d5c8308c0dc1cf3fb9b037f6";
 
-        private static readonly string CachePath = Path.Combine(
-            AppDomain.CurrentDomain.BaseDirectory,
-            "state",
-            "driver-resolver-cache.txt");
+        private static string CachePath => ResolverStateStore.CacheFile("driver-resolver-cache.txt");
 
         // 617.14 internal NVIDIA RM transport prologue. Relative addresses are wildcarded.
         // This is intentionally long enough to be unique in the reviewed image.

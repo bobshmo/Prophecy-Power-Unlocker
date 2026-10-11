@@ -13,7 +13,7 @@ internal sealed class CurrentGpuPower
     public string Apply(int watts)
     {
         var compatibility = _backend.CheckCompatibility();
-        if (compatibility.Profile == null || !compatibility.Profile.IsInRange(watts))
+        if (compatibility.Profile == null || watts < 1 || watts > int.MaxValue/1000)
             throw new InvalidOperationException("Unsupported target or GPU: " + compatibility.Reason);
         var live = _backend.GetPowerState();
         if (NeedsMaxChange(live.MaxW, watts))

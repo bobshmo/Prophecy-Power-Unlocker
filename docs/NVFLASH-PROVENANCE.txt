@@ -1,0 +1,5 @@
+Release: https://github.com/WillyBilly06/NVFLASH/releases/tag/Release
+Asset: nvflashb.exe
+SHA256: b0ddd652a3e8abcd6385898d5fb3db7c765118e5794822c9b1d944f0c6f5e4f1
+Retrieved: 2026-10-11
+The repository README describes MIT but its LICENSE file contains GPLv3. Included verbatim without asserting a license for NVIDIA-derived binary code. The binary is unmodified and used for read-only resolution/backup and user-confirmed firmware flashing.

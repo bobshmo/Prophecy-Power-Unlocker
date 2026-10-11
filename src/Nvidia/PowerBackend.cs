@@ -437,7 +437,7 @@ namespace NvpwrControlBlackwell
             CompatibilityState c = CheckCompatibility();
             if (c.Profile == null) return OperationResult.Fail("Unsupported GPU profile.");
             int stockW = c.VbiosResolver != null && c.VbiosResolver.StockMaxW > 0 ? c.VbiosResolver.StockMaxW : c.Profile.StockPowerW;
-            if (watts != stockW && !c.Profile.IsInRange(watts)) return OperationResult.Fail("CURRENT target is outside this GPU profile range.");
+            if (watts < 1 || watts > int.MaxValue / 1000) return OperationResult.Fail("CURRENT must be a positive whole-watt value.");
             if (!c.CurrentWritesReady)
                 return OperationResult.Fail("Driver transport is not trusted. Validate the new driver first. " + (c.Driver != null ? c.Driver.Reason : ""));
 
@@ -510,7 +510,7 @@ namespace NvpwrControlBlackwell
         public OperationResult InstallAutostart(int watts, string exePath)
         {
             CompatibilityState c = CheckCompatibility();
-            if (c.Profile == null || !c.Profile.IsInRange(watts)) return OperationResult.Fail("Invalid autostart target for this GPU.");
+            if (c.Profile == null || watts < 1 || watts > int.MaxValue / 1000) return OperationResult.Fail("Invalid autostart target for this GPU.");
             if (!c.CurrentWritesReady) return OperationResult.Fail("Driver transport must be trusted before autostart is enabled.");
 
             PowerState p = GetPowerState();

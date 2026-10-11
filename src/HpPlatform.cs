@@ -61,7 +61,8 @@ internal static class HpPlatform
         {
             using var hp = Open();
             // Same legacy performance-mode value used by the validated Victus HP path.
-            if (!hp.SetFanMode(HpWmiBios.FanMode.LegacyPerformance))
+            var performanceMode=HpWmiMode.Enabled?HpWmiMode.ModeForPolicy((int)hp.ThermalPolicy,true):HpWmiBios.FanMode.LegacyPerformance;
+            if (!hp.SetFanMode(performanceMode))
                 throw new InvalidOperationException("HPCM performance mode was refused. GPU CURRENT was not sent.");
             NvpwrControlBlackwell.AppLog.Write("HPCM performance command accepted before GPU CURRENT.");
             if (_fanMax == true && (!hp.SetFanMax(true) || hp.GetFanMax() != true))

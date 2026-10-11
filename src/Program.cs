@@ -12,7 +12,7 @@ internal static class Program
     {
         if (args.Length == 1 && args[0] == "--self-test")
         {
-            CurrentGpuPower.TestRouting(); HpPlatform.TestCurrentGuard(); GpuDetectionTests.Run();
+            CurrentGpuPower.TestRouting(); HpPlatform.TestCurrentGuard(); GpuDetectionTests.Run(); PcfRange.Test(); FirmwareTests.Run();
             var good = new CpuSettings(54, 71, 54, 54, 54, 95);
             good.Validate();
             new CpuSettings(45, 45, 45, 45, 45, 100).Validate();
@@ -160,7 +160,8 @@ internal sealed class MainForm : Form { public bool OperationBusy => _busy;
         LabelAt(cpuPanel, "Each limit is independent; lower limits can bind first.", 16, 270, 410, 28, 9);
         var gpuPanel = Card("GPU / PLATFORM", 486, 105, 450, 310);
         Field(gpuPanel, "HP Target TPP (W)", _tpp, 50, 100, 180, 180);
-        Field(gpuPanel, "NVIDIA PCF GPU maximum (W)", _gpu, 86, 100, 115, 115);
+        gpuPanel.Controls.Add(new Label{Text="PCF Max (HP unlock) is on the Power page",AutoSize=true,Location=new Point(16,86)});
+        _gpu.Enabled = false;
         Field(gpuPanel, "HP PLGPU (W)", _plgpu, 122, 35, 71, 71);
         Field(gpuPanel, "NVIDIA laptop target (W)", _nvpWatts, 158, 0, 0, 0);
         _nvpWatts.Enabled = false; _useNvp.Enabled = false;
@@ -197,9 +198,10 @@ internal sealed class MainForm : Form { public bool OperationBusy => _busy;
                 DrawToBitmap(bitmap, ClientRectangle); bitmap.Save(capturePath!); Close(); return;
             }
             await Run(async () => {
+                await ScanPcf();
                 var profile = await Task.Run(() => new NvpwrControlBlackwell.PowerBackend().CheckCompatibility().Profile);
                 if (profile == null) { Log("No supported NVIDIA laptop profile detected."); return; }
-                _nvpWatts.Maximum = profile.MaxPowerW; _nvpWatts.Minimum = profile.MinW;
+                _nvpWatts.Maximum = profile.MaxPowerW; _nvpWatts.Minimum = 1;
                 _nvpWatts.Value = Math.Clamp(profile.StockPowerW, profile.MinW, profile.MaxPowerW);
                 _nvpWatts.Enabled = true; _useNvp.Enabled = true;
                 Log("GPU target range: " + profile);
@@ -218,28 +220,40 @@ internal sealed class MainForm : Form { public bool OperationBusy => _busy;
         Log(await Task.Run(() => controller.ApplyCpuPower(settings)));
         _held = settings; if (_keep.Checked) _timer.Start();
     }
+    private async Task ScanPcf()
+    {
+        var profile = await Task.Run(() => new NvpwrControlBlackwell.PowerBackend().GetProfile());
+        int ceiling = profile?.StockTgpMaxW ?? 0;
+        _gpu.Enabled = ceiling > 0;
+        if (ceiling <= 0) { Log("PCF unavailable: no supported laptop GPU identity was detected."); return; }
+        _gpu.Maximum = ceiling;
+        Log($"PCF scan: {profile!.DisplayName}; 1–{ceiling} W including Dynamic Boost. No settings applied.");
+    }
     private async Task ApplyGpu()
     {
         int tpp = (int)_tpp.Value, gpu = (int)_gpu.Value;
         int? pl = _hpPl.Checked ? (int)_plgpu.Value : null; bool hpcm = _hpcm.Checked;
         int nvp = (int)_nvpWatts.Value; bool useNvp = _useNvp.Checked;
-        if (useNvp && nvp % 5 != 0) throw new InvalidOperationException("NVIDIA power targets require 5 W steps.");
+
         await Task.Run(() =>
         {
+            var profile = new NvpwrControlBlackwell.PowerBackend().GetProfile();
+
             ApplyHpState(pl, hpcm);
             using var pcf = new PcfPowerController();
-            pcf.SetPowerField(PcfPowerFields.ACMaxGPULimit, (uint)gpu * 1000);
+
             pcf.SetPowerField(PcfPowerFields.ACTargetTPPLimit, (uint)tpp * 1000);
             Thread.Sleep(300);
             var values = pcf.GetPowerValues();
-            if (values.ACMaxGPULimitInMilliwatts != (uint)gpu * 1000 || values.ACTargetTPPLimitInMilliwatts != (uint)tpp * 1000)
+            if (values.ACTargetTPPLimitInMilliwatts != (uint)tpp * 1000)
                 throw new InvalidOperationException("HP/PCF power readback mismatch. NVIDIA target was not applied.");
         });
-        Log($"HP/PCF verified: TPP {tpp} W; GPU max {gpu} W; PLGPU {(pl?.ToString() ?? "preserved")}; HPCM {hpcm}. CURRENT applies HPCM again immediately before writing.");
+        Log($"HP/PCF verified: TPP {tpp} W; GPU cap is controlled by PCF Max toggle; PLGPU {(pl?.ToString() ?? "preserved")}; HPCM {hpcm}. CURRENT applies HPCM again immediately before writing.");
         if (useNvp) Log(await Task.Run(() => _currentGpu.Apply(nvp)));
     }
     private async Task ReadGpu()
     {
+        await ScanPcf();
         try
         {
             var result = await Task.Run(() => { using var pcf = new PcfPowerController(); var v = pcf.GetPowerValues(); return $"PCF TPP {FormatWatts(v.ACTargetTPPLimitInMilliwatts)}; GPU max {FormatWatts(v.ACMaxGPULimitInMilliwatts)}"; });
@@ -278,7 +292,7 @@ internal sealed class MainForm : Form { public bool OperationBusy => _busy;
     private void Log(string text) => _log.AppendText($"[{DateTime.Now:HH:mm:ss}] {text}{Environment.NewLine}");
     private Panel Card(string title, int x, int y, int width, int height)
     {
-        var panel = new Panel { Location = new Point(x, y), Size = new Size(width, height), BackColor = Color.FromArgb(32, 37, 47) };
+        var panel = new NvpwrControlBlackwell.CardPanel { Location = new Point(x, y), Size = new Size(width, height), BackColor = Color.FromArgb(32, 37, 47) };
         Controls.Add(panel); LabelAt(panel, title, 16, 12, width - 32, 28, 12); return panel;
     }
     private void Field(Control parent, string label, NumericUpDown input, int y, int min, int max, int value)

@@ -20,6 +20,25 @@ namespace NvpwrControlBlackwell
         private bool _busy;
         private bool _telemetryBusy;
         private bool _autoVbiosAttempted;
+        private ImportedRom? _importedRom;
+        private readonly Dictionary<string,(Panel Page,NavButton Button)> _extraPages=new();
+        private CheckBox? _pcfToggle;
+        private Label? _pcfState;
+        private VictusPowerUnlockGui.PcfDetection? _pcfDetection;
+        private bool _pcfUpdating;
+        private CheckBox? _hpModeToggle;
+        private Label? _hpModeState;
+        private VictusPowerUnlockGui.HpModeScan? _hpModeScan;
+        private bool _hpModeUpdating;
+        public void AddUnifiedPage(string id,string title,Control content)
+        {
+            var page=Page();page.Controls.Add(content);content.Dock=DockStyle.Fill;_content.Controls.Add(page);
+            var button=Nav(id);button.Text=title;button.Width=U(116);
+            var host=_nav.Controls.OfType<FlowLayoutPanel>().First();host.Controls.Add(button);
+            _extraPages[id]=(page,button);button.Click+=(_,_)=>ShowPage(id);
+            page.Visible=false;ThemeRecursive(page,_settings.Theme!="light");ThemeRecursive(button,_settings.Theme!="light");
+        }
+        public void SelectUnifiedPage(string id)=>ShowPage(id);
         private string _lastAutoVbiosMessage = "";
         private double _userScale = 1.0;
 
@@ -119,7 +138,7 @@ namespace NvpwrControlBlackwell
             ApplySettingsSelectors();
             ShowPage(_settings.LastPage);
 
-            if (preview) { LayoutResponsivePages(); return; }
+            if (preview) { Resize+=(_,_)=>LayoutResponsivePages(); LayoutResponsivePages(); return; }
             InitTrayIcon();
             StartShowWindowListener();
 
@@ -496,6 +515,36 @@ namespace NvpwrControlBlackwell
         private void BuildPowerPage()
         {
             FlowLayoutPanel root = VerticalRoot(_pagePower);
+            var pcfCard=Card(112,true);
+            _pcfToggle=new CheckBox{Text="",AutoSize=true,Enabled=false,Location=new Point(U(16),U(18))};
+            var pcfLabel=new Label{Text="PCF Max (HP unlock)",AutoSize=true,Location=new Point(U(40),U(18))};
+            _pcfState=new Label{Text="PCF detection runs at startup.",AutoSize=false,Location=new Point(U(16),U(52)),Size=new Size(U(800),U(45))};
+            pcfCard.Controls.AddRange(new Control[]{_pcfToggle,pcfLabel,_pcfState});_responsiveWide.Add(pcfCard);root.Controls.Add(pcfCard);
+            var wmiCard=Card(140,true);
+            _hpModeToggle=new CheckBox{Text="",AutoSize=true,Enabled=false,Location=new Point(U(16),U(18))};
+            var wmiLabel=new Label{Text="HP WMI performance state",AutoSize=true,Location=new Point(U(40),U(18))};
+            _hpModeState=new Label{Text="Scan HP WMI to identify supported states for the selected CURRENT.",AutoSize=false,Location=new Point(U(16),U(55)),Size=new Size(U(780),U(68))};
+            var scanWmi=ButtonBase("scanHpWmi",U(160));scanWmi.Text="Scan HP WMI";scanWmi.Location=new Point(U(470),U(12));
+            wmiCard.Controls.AddRange(new Control[]{_hpModeToggle,wmiLabel,_hpModeState,scanWmi});_responsiveWide.Add(wmiCard);root.Controls.Add(wmiCard);
+            scanWmi.Click+=async(_,_)=>{
+                if(_busy)return;_busy=true;UpdateWriteButtons();
+                try{int watts=_currentSlider.Value;_hpModeScan=await Task.Run(()=>VictusPowerUnlockGui.HpWmiMode.Scan(watts));_hpModeState.Text=_hpModeScan.Details;_hpModeToggle.Enabled=true;}
+                catch(Exception ex){_hpModeState.Text=ex.Message;_hpModeToggle.Enabled=false;}
+                finally{_busy=false;UpdateWriteButtons();}
+            };
+            _hpModeToggle.CheckedChanged+=async(_,_)=>{
+                if(_hpModeUpdating||_busy||_hpModeScan==null)return;
+                bool enabled=_hpModeToggle.Checked;_busy=true;_hpModeToggle.Enabled=false;UpdateWriteButtons();
+                try{_hpModeState.Text=await Task.Run(()=>VictusPowerUnlockGui.HpWmiMode.Apply(_hpModeScan,enabled));}
+                catch(Exception ex){_hpModeState.Text=ex.Message;_hpModeUpdating=true;_hpModeToggle.Checked=!enabled;_hpModeUpdating=false;}
+                finally{_busy=false;_hpModeToggle.Enabled=true;UpdateWriteButtons();}
+            };
+            _pcfToggle.CheckedChanged+=async(_,_)=>{
+                if(_pcfUpdating||_busy||_pcfDetection==null)return;
+                bool requested=_pcfToggle.Checked;
+                if(requested&&!_pcfDetection.Hp&&MessageBox.Show(this,"This board is not HP. Enable PCF Max at the GPU's stock limit including Dynamic Boost?","PCF Max",MessageBoxButtons.YesNo,MessageBoxIcon.Question)!=DialogResult.Yes){_pcfUpdating=true;_pcfToggle.Checked=false;_pcfUpdating=false;return;}
+                await ApplyPcfToggle(requested);
+            };
             root.Controls.Add(SectionHeader("powerSection", "powerSectionSub"));
 
             _rebootBanner = new Panel { Height = U(76), Padding = new Padding(U(14)), Visible = false, Margin = new Padding(U(7), 0, U(7), U(12)) };
@@ -851,9 +900,9 @@ namespace NvpwrControlBlackwell
             _responsiveWide.Add(statusGrid);
             root.Controls.Add(statusGrid);
 
-            CardPanel buttons = Card(166, true); buttons.Dock = DockStyle.None;
+            CardPanel buttons = Card(240, true); buttons.Dock = DockStyle.None;
             CardTitle(buttons, "compatActionsTitle");
-            FlowLayoutPanel actions = new FlowLayoutPanel { Location = new Point(U(14), U(57)), Height = U(94), AutoSize = false, WrapContents = true, Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top };
+            FlowLayoutPanel actions = new FlowLayoutPanel { Location = new Point(U(14), U(57)), Height = U(165), AutoSize = false, WrapContents = true, Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top };
             _validateDriver = ButtonBase("validateDriver", U(200));
             _autoVbios = ButtonBase("autoVbios", U(190));
             _selectRom = ButtonBase("selectRom", U(155));
@@ -862,6 +911,30 @@ namespace NvpwrControlBlackwell
             _openLog = ButtonBase("openLog", U(125));
             foreach (Control b in new Control[] { _validateDriver, _autoVbios, _selectRom, _recheck, _exportReport, _openLog }) b.Margin = new Padding(0, 0, U(10), 0);
             actions.Controls.AddRange(new Control[] { _validateDriver, _autoVbios, _selectRom, _recheck, _exportReport, _openLog });
+            var backupRom = ButtonBase("backupFirmware", U(155)); backupRom.Text="Backup ROM";
+            var importRom = ButtonBase("importFirmware", U(155)); importRom.Text="Import ROM";
+            var flashRom = ButtonBase("flashFirmware", U(155)); flashRom.Text="Flash imported ROM";
+            actions.Controls.AddRange(new Control[]{backupRom,importRom,flashRom});
+            backupRom.Click+=async(_,_)=>{
+                if(_busy)return;
+                using var dialog=new SaveFileDialog{Filter="GPU ROM|*.rom",FileName="gpu-backup.rom",OverwritePrompt=true};
+                if(dialog.ShowDialog(this)==DialogResult.OK)await RunOperationTask(()=>FirmwareTools.Backup(dialog.FileName),false);
+            };
+            importRom.Click+=(_,_)=>{
+                if(_busy)return;
+                using var dialog=new OpenFileDialog{Filter="GPU ROM|*.rom;*.bin",Title="Import a ROM for the detected GPU"};
+                if(dialog.ShowDialog(this)!=DialogResult.OK)return;
+                try{_importedRom=null;_importedRom=FirmwareTools.Import(dialog.FileName,_compat.GpuPnpId);ShowResult(OperationResult.Ok("Imported "+Path.GetFileName(_importedRom.Path)+"; SHA256 "+_importedRom.Sha256+". No firmware written."));}
+                catch(Exception ex){ShowResult(OperationResult.Fail(ex.Message));}
+            };
+            flashRom.Click+=async(_,_)=>{
+                if(_busy)return;
+                var rom=_importedRom;
+                if(rom==null){ShowResult(OperationResult.Fail("Import a matching ROM first."));return;}
+                string message="Flash "+Path.GetFileName(rom.Path)+" to "+_compat.GpuName+"?\n\nSHA256: "+rom.Sha256+"\n\nA backup will be created first. Incorrect firmware can prevent the GPU from starting. Keep AC power connected and follow NVFlashB's confirmation prompts.";
+                if(MessageBox.Show(this,message,"Confirm GPU firmware flash",MessageBoxButtons.YesNo,MessageBoxIcon.Warning,MessageBoxDefaultButton.Button2)!=DialogResult.Yes)return;
+                await RunOperationTask(()=>FirmwareTools.Flash(rom),true);
+            };
             buttons.Controls.Add(actions);
             _responsiveWide.Add(buttons);
             root.Controls.Add(buttons);
@@ -1278,7 +1351,7 @@ namespace NvpwrControlBlackwell
                 try { ov = await Task.Run(delegate { return _power.GetInstalledMaxOverrideTarget(); }); } catch { }
                 try { t = await Task.Run(delegate { return NvApiTuner.Probe(c.Profile != null && c.Profile.AllowMsvdd); }); } catch { }
                 _compat = c; if (t != null) _tuner = t;
-                PopulatePowerTargets(c.Profile);
+                PopulatePowerTargets(c.Profile,p.MaxW);
                 UpdateHeader(); UpdatePowerUi(p, ov); UpdateCompatibilityUi(); UpdateTunerUi();
                 SetStatus(c.Profile != null ? c.Profile.DisplayName + " — " + c.DriverVersion : T("unsupportedGpu"));
                 if ((_settings.CoreOffsetEnabled || _settings.MemoryOffsetEnabled) && _tuner != null)
@@ -1357,7 +1430,7 @@ namespace NvpwrControlBlackwell
             _compatBadge.Text = "● " + text; _compatBadge.BackColor = color; _compatBadge.ForeColor = Color.White;
         }
 
-        private void PopulatePowerTargets(GpuProfile p)
+        private void PopulatePowerTargets(GpuProfile p,double? liveMax)
         {
             if (_maxSlider == null || _currentSlider == null) return;
             if (p == null)
@@ -1373,10 +1446,10 @@ namespace NvpwrControlBlackwell
             int oldMax = _settings.MaxSelection;
             int oldCur = _settings.CurrentSelection;
             if (oldMax == 0 || !p.IsInRange(oldMax)) oldMax = stockW;
-            if (oldCur == 0 || !p.IsInRange(oldCur)) oldCur = stockW;
+            if (oldCur < 1 || oldCur > int.MaxValue/1000) oldCur = stockW;
 
             _maxSlider.SetRange(p.MinW, p.MaxPowerW, 5);
-            _currentSlider.SetRange(p.MinW, p.MaxPowerW, 5);
+            _currentSlider.SetRange(1, liveMax.HasValue&&liveMax.Value>=1&&liveMax.Value<=int.MaxValue/1000?(int)Math.Floor(liveMax.Value):p.MaxPowerW, 1);
             _maxSlider.Value = oldMax;
             _currentSlider.Value = oldCur;
             _maxSlider.Enabled = true;
@@ -1419,6 +1492,7 @@ namespace NvpwrControlBlackwell
         private void UpdatePowerUi(PowerState p, int? overrideTarget)
         {
             if (p == null) p = new PowerState();
+            if(p.MaxW.HasValue && p.MaxW.Value>=1 && p.MaxW.Value<=int.MaxValue/1000){int selected=_settings.CurrentSelection;_currentSlider.SetRange(1,(int)Math.Floor(p.MaxW.Value),1);_currentSlider.Value=Math.Clamp(selected,1,(int)Math.Floor(p.MaxW.Value));}
             _powerCurrent.Text = W(p.CurrentW);
             _powerMax.Text = W(p.MaxW);
 
@@ -1765,6 +1839,13 @@ namespace NvpwrControlBlackwell
 
         private async void ResolveVbiosAutoAsync()
         {
+            if (!_busy && _compat.VbiosResolver?.Resolved != true && VbiosResolver.FindNvflash() == null)
+            {
+                using var toolDialog = new OpenFileDialog { Filter="NVFlash|nvflashb.exe;nvflash64.exe", Title="Select extracted NVFlash to read your GPU ROM" };
+                if (toolDialog.ShowDialog(this) != DialogResult.OK) return;
+                try { VbiosResolver.SelectNvflash(toolDialog.FileName); }
+                catch(Exception ex) { ShowResult(OperationResult.Fail(ex.Message)); return; }
+            }
             if (_busy) return; _busy = true; UpdateWriteButtons(); SetStatus(T("resolvingVbios"));
             try
             {
@@ -1968,7 +2049,7 @@ namespace NvpwrControlBlackwell
             PowerState p = null; int? ov = null;
             try { p = await Task.Run(delegate { return _power.GetPowerState(); }); } catch { }
             try { ov = await Task.Run(delegate { return _power.GetInstalledMaxOverrideTarget(); }); } catch { }
-            _compat = c; PopulatePowerTargets(c.Profile); UpdateHeader(); UpdatePowerUi(p, ov); UpdateCompatibilityUi(); UpdateWriteButtons();
+            _compat = c; PopulatePowerTargets(c.Profile,p.MaxW); UpdateHeader(); UpdatePowerUi(p, ov); UpdateCompatibilityUi(); UpdateWriteButtons();
         }
 
         private bool ConfirmExperimental(int watts)
@@ -1981,6 +2062,8 @@ namespace NvpwrControlBlackwell
         private void UpdateWriteButtons()
         {
             bool idle = !_busy;
+            if(_pcfToggle!=null)_pcfToggle.Enabled=idle&&_pcfDetection!=null;
+            if(_hpModeToggle!=null)_hpModeToggle.Enabled=idle&&_hpModeScan!=null;
             _applyMax.Enabled = idle && _compat.Profile != null && _compat.MaxWritesReady;
             _restoreMax.Enabled = idle && _compat.Profile != null && _compat.MaxWritesReady;
             _applyCurrent.Enabled = idle && _compat.Profile != null && _compat.CurrentWritesReady;
@@ -2009,6 +2092,28 @@ namespace NvpwrControlBlackwell
             _pagePower.Visible = page == "power"; _pageTune.Visible = page == "tuning"; _pageTelemetry.Visible = page == "telemetry"; _pageCompat.Visible = page == "compatibility"; _pageSettings.Visible = page == "settings";
             _pagePower.BringToFront(); if (page == "tuning") _pageTune.BringToFront(); if (page == "telemetry") _pageTelemetry.BringToFront(); if (page == "compatibility") _pageCompat.BringToFront(); if (page == "settings") _pageSettings.BringToFront();
             SetNavActive(_navPower, page == "power"); SetNavActive(_navTune, page == "tuning"); SetNavActive(_navTelemetry, page == "telemetry"); SetNavActive(_navCompat, page == "compatibility"); SetNavActive(_navSettings, page == "settings");
+            foreach(var entry in _extraPages){bool active=entry.Key==page;entry.Value.Page.Visible=active;if(active)entry.Value.Page.BringToFront();SetNavActive(entry.Value.Button,active);}
+        }
+
+        public async Task DetectPcfAsync()
+        {
+            try{
+                _pcfDetection=await Task.Run(VictusPowerUnlockGui.PcfUnlock.Scan);
+                _pcfState!.Text=_pcfDetection.Message;_pcfToggle!.Enabled=true;_pcfUpdating=true;_pcfToggle.Checked=_pcfDetection.CurrentMw==(uint)_pcfDetection.StockW*1000;_pcfUpdating=false;
+                if(_pcfDetection.Restricted){
+                    bool enable=_pcfDetection.Hp || MessageBox.Show(this,_pcfDetection.Message+"\nThis is not an HP board. Enable PCF Max?","Detected PCF restriction",MessageBoxButtons.YesNo,MessageBoxIcon.Question)==DialogResult.Yes;
+                    if(enable)await ApplyPcfToggle(true);
+                }
+            }catch(Exception ex){_pcfState!.Text="PCF unavailable: "+ex.Message;_pcfToggle!.Enabled=false;}
+        }
+        private async Task ApplyPcfToggle(bool enabled)
+        {
+            if(_pcfDetection==null||_busy)return;
+            _busy=true;UpdateWriteButtons();
+            _pcfToggle!.Enabled=false;
+            try{_pcfState!.Text=await Task.Run(()=>VictusPowerUnlockGui.PcfUnlock.Apply(_pcfDetection,enabled));_pcfUpdating=true;_pcfToggle.Checked=enabled;}
+            catch(Exception ex){_pcfState!.Text=ex.Message;_pcfUpdating=true;_pcfToggle.Checked=!enabled;}
+            finally{_pcfUpdating=false;_pcfToggle.Enabled=true;_busy=false;UpdateWriteButtons();}
         }
 
         private void SetNavActive(NavButton b, bool active) { b.Active = active; b.Invalidate(); }
@@ -2067,7 +2172,7 @@ namespace NvpwrControlBlackwell
         private void ThemeRecursive(Control c, bool dark)
         {
             c.ForeColor = _fg;
-            if (c is Panel || c is FlowLayoutPanel || c is TableLayoutPanel || c == this) c.BackColor = _bg;
+            if (c is Panel || c is FlowLayoutPanel || c is TableLayoutPanel || c is Form || c == this) c.BackColor = _bg;
 
             CardPanel card = c as CardPanel;
             if (card != null)
