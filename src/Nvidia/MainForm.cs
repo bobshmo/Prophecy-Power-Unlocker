@@ -9,7 +9,7 @@ using System.Windows.Forms;
 
 namespace NvpwrControlBlackwell
 {
-    internal sealed class MainForm : Form
+    internal sealed partial class MainForm : Form
     {
         private readonly PowerBackend _power = new PowerBackend();
         private AppSettings _settings;
@@ -22,14 +22,11 @@ namespace NvpwrControlBlackwell
         private bool _autoVbiosAttempted;
         private ImportedRom? _importedRom;
         private readonly Dictionary<string,(Panel Page,NavButton Button)> _extraPages=new();
-        private CheckBox? _pcfToggle;
-        private Label? _pcfState;
-        private VictusPowerUnlockGui.PcfDetection? _pcfDetection;
-        private bool _pcfUpdating;
         private CheckBox? _hpModeToggle;
         private Label? _hpModeState;
         private VictusPowerUnlockGui.HpModeScan? _hpModeScan;
         private bool _hpModeUpdating;
+
         public void AddUnifiedPage(string id,string title,Control content)
         {
             var page=Page();page.Controls.Add(content);content.Dock=DockStyle.Fill;_content.Controls.Add(page);
@@ -515,11 +512,6 @@ namespace NvpwrControlBlackwell
         private void BuildPowerPage()
         {
             FlowLayoutPanel root = VerticalRoot(_pagePower);
-            var pcfCard=Card(112,true);
-            _pcfToggle=new CheckBox{Text="",AutoSize=true,Enabled=false,Location=new Point(U(16),U(18))};
-            var pcfLabel=new Label{Text="PCF Max (HP unlock)",AutoSize=true,Location=new Point(U(40),U(18))};
-            _pcfState=new Label{Text="PCF detection runs at startup.",AutoSize=false,Location=new Point(U(16),U(52)),Size=new Size(U(800),U(45))};
-            pcfCard.Controls.AddRange(new Control[]{_pcfToggle,pcfLabel,_pcfState});_responsiveWide.Add(pcfCard);root.Controls.Add(pcfCard);
             var wmiCard=Card(140,true);
             _hpModeToggle=new CheckBox{Text="",AutoSize=true,Enabled=false,Location=new Point(U(16),U(18))};
             var wmiLabel=new Label{Text="HP WMI performance state",AutoSize=true,Location=new Point(U(40),U(18))};
@@ -539,12 +531,7 @@ namespace NvpwrControlBlackwell
                 catch(Exception ex){_hpModeState.Text=ex.Message;_hpModeUpdating=true;_hpModeToggle.Checked=!enabled;_hpModeUpdating=false;}
                 finally{_busy=false;_hpModeToggle.Enabled=true;UpdateWriteButtons();}
             };
-            _pcfToggle.CheckedChanged+=async(_,_)=>{
-                if(_pcfUpdating||_busy||_pcfDetection==null)return;
-                bool requested=_pcfToggle.Checked;
-                if(requested&&!_pcfDetection.Hp&&MessageBox.Show(this,"This board is not HP. Enable PCF Max at the GPU's stock limit including Dynamic Boost?","PCF Max",MessageBoxButtons.YesNo,MessageBoxIcon.Question)!=DialogResult.Yes){_pcfUpdating=true;_pcfToggle.Checked=false;_pcfUpdating=false;return;}
-                await ApplyPcfToggle(requested);
-            };
+
             root.Controls.Add(SectionHeader("powerSection", "powerSectionSub"));
 
             _rebootBanner = new Panel { Height = U(76), Padding = new Padding(U(14)), Visible = false, Margin = new Padding(U(7), 0, U(7), U(12)) };
@@ -883,6 +870,7 @@ namespace NvpwrControlBlackwell
         private void BuildCompatibilityPage()
         {
             FlowLayoutPanel root = VerticalRoot(_pageCompat);
+            AddPlatformPowerControls(root);
             root.Controls.Add(SectionHeader("compatSection", "compatSectionSub"));
 
             TableLayoutPanel statusGrid = new TableLayoutPanel
@@ -2062,7 +2050,6 @@ namespace NvpwrControlBlackwell
         private void UpdateWriteButtons()
         {
             bool idle = !_busy;
-            if(_pcfToggle!=null)_pcfToggle.Enabled=idle&&_pcfDetection!=null;
             if(_hpModeToggle!=null)_hpModeToggle.Enabled=idle&&_hpModeScan!=null;
             _applyMax.Enabled = idle && _compat.Profile != null && _compat.MaxWritesReady;
             _restoreMax.Enabled = idle && _compat.Profile != null && _compat.MaxWritesReady;
@@ -2093,29 +2080,10 @@ namespace NvpwrControlBlackwell
             _pagePower.BringToFront(); if (page == "tuning") _pageTune.BringToFront(); if (page == "telemetry") _pageTelemetry.BringToFront(); if (page == "compatibility") _pageCompat.BringToFront(); if (page == "settings") _pageSettings.BringToFront();
             SetNavActive(_navPower, page == "power"); SetNavActive(_navTune, page == "tuning"); SetNavActive(_navTelemetry, page == "telemetry"); SetNavActive(_navCompat, page == "compatibility"); SetNavActive(_navSettings, page == "settings");
             foreach(var entry in _extraPages){bool active=entry.Key==page;entry.Value.Page.Visible=active;if(active)entry.Value.Page.BringToFront();SetNavActive(entry.Value.Button,active);}
+            if(page=="compatibility"&&IsHandleCreated)BeginInvoke(new Action(()=>_pageCompat.AutoScrollPosition=Point.Empty));
         }
 
-        public async Task DetectPcfAsync()
-        {
-            try{
-                _pcfDetection=await Task.Run(VictusPowerUnlockGui.PcfUnlock.Scan);
-                _pcfState!.Text=_pcfDetection.Message;_pcfToggle!.Enabled=true;_pcfUpdating=true;_pcfToggle.Checked=_pcfDetection.CurrentMw==(uint)_pcfDetection.StockW*1000;_pcfUpdating=false;
-                if(_pcfDetection.Restricted){
-                    bool enable=_pcfDetection.Hp || MessageBox.Show(this,_pcfDetection.Message+"\nThis is not an HP board. Enable PCF Max?","Detected PCF restriction",MessageBoxButtons.YesNo,MessageBoxIcon.Question)==DialogResult.Yes;
-                    if(enable)await ApplyPcfToggle(true);
-                }
-            }catch(Exception ex){_pcfState!.Text="PCF unavailable: "+ex.Message;_pcfToggle!.Enabled=false;}
-        }
-        private async Task ApplyPcfToggle(bool enabled)
-        {
-            if(_pcfDetection==null||_busy)return;
-            _busy=true;UpdateWriteButtons();
-            _pcfToggle!.Enabled=false;
-            try{_pcfState!.Text=await Task.Run(()=>VictusPowerUnlockGui.PcfUnlock.Apply(_pcfDetection,enabled));_pcfUpdating=true;_pcfToggle.Checked=enabled;}
-            catch(Exception ex){_pcfState!.Text=ex.Message;_pcfUpdating=true;_pcfToggle.Checked=!enabled;}
-            finally{_pcfUpdating=false;_pcfToggle.Enabled=true;_busy=false;UpdateWriteButtons();}
-        }
-
+        public Task DetectPcfAsync()=>ScanPlatformPowerAsync();
         private void SetNavActive(NavButton b, bool active) { b.Active = active; b.Invalidate(); }
 
         private void ApplyTheme()

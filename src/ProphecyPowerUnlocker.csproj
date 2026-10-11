@@ -15,7 +15,7 @@
     <AssemblyName>Prophecy Power Unlocker</AssemblyName>
     <Product>Prophecy Power Unlocker</Product>
     <AssemblyTitle>Prophecy Power Unlocker</AssemblyTitle>
-    <Version>1.2.0</Version>
+    <Version>1.2.1</Version>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="OmenCore"><HintPath>..\lib\OmenCore.dll</HintPath></Reference><FrameworkReference Include="Microsoft.WindowsDesktop.App.WPF" /><PackageReference Include="System.Management" Version="10.0.2" /><PackageReference Include="System.ServiceProcess.ServiceController" Version="9.0.0" /><PackageReference Include="System.Diagnostics.EventLog" Version="9.0.0" />

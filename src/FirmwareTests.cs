@@ -4,6 +4,9 @@ internal static class FirmwareTests
 {
     internal static void Run()
     {
+        if(!TppControl.ValidBounds(125,180)||!TppControl.ValidBounds(180,180)||TppControl.ValidBounds(0,180)||TppControl.ValidBounds(180,125)||TppControl.ValidBounds(125,int.MaxValue))throw new Exception("Invalid platform TPP bounds accepted.");
+        if(new PlatformPowerScan("test",180000,null,null,NvAPIWrapper.GPU.PcfPowerFields.ACTargetTPPLimit).Adjustable)throw new Exception("Current TPP incorrectly treated as a detected range.");
+        if(!new PlatformPowerScan("test",180000,125,180,NvAPIWrapper.GPU.PcfPowerFields.ACTargetTPPLimit).Adjustable)throw new Exception("Reported platform bounds lost.");
         if(HpWmiMode.ModeForPolicy(0,true)!=OmenCore.Hardware.HpWmiBios.FanMode.LegacyPerformance || HpWmiMode.ModeForPolicy(1,true)!=OmenCore.Hardware.HpWmiBios.FanMode.Performance || HpWmiMode.ModeForPolicy(0,false)!=OmenCore.Hardware.HpWmiBios.FanMode.LegacyDefault)throw new Exception("WMI thermal policy mapping failed.");
         if(!PcfUnlock.ShouldAutoEnable(true,80000,115)||PcfUnlock.ShouldAutoEnable(false,80000,115)||PcfUnlock.ShouldAutoEnable(true,115000,115)||PcfUnlock.ShouldAutoEnable(true,0,115))throw new Exception("PCF detection policy failed.");
         using(var slider=new PowerSlider()){slider.SetRange(1,140,1);slider.Value=73;if(slider.Value!=73)throw new Exception("Custom CURRENT value rounded.");}

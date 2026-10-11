@@ -1,5 +1,7 @@
 # Prophecy Power Unlocker
 
+**ACTargetTPPLimit** and **ACMaxGPULimit** are on Compatibility. Scan laptop / GPU reads the current PCF values and looks for explicit firmware default and upper-bound metadata in watts. Valid reported bounds enable adjustment from stock to detected maximum. If no valid bounds are advertised, adjustment is unavailable. Current targets and GPU-model tables are not treated as detected platform maxima. Apply rechecks identity/range and verifies PCF readback.
+
 ## Resolving an unknown VBIOS
 
 This local package includes the Blackwell `nvflashb.exe` release from https://github.com/WillyBilly06/NVFLASH/releases/tag/Release in `tools`. Click the automatic VBIOS resolver to use it. If it is missing, select `nvflashb.exe` or `nvflash64.exe` when prompted. The app remembers its location, uses read-only ROM dump commands for resolution, and validates the dump against your GPU/VBIOS. You can also select your own GPU's ROM directly. Local driver/VBIOS validation persists in `%ProgramData%\ProphecyPowerUnlocker\validation`; no other user's validation is bundled.
@@ -15,7 +17,7 @@ Windows control panel combining NVIDIA laptop power control and telemetry, HP Vi
 - NVIDIA clock and voltage tuning where the installed driver exposes the controls.
 - HP Victus Fan Max with readback. HPCM performance mode is requested immediately before each NVIDIA CURRENT write on Victus; rejection stops the write.
 - Separate CPU sustained/STAPM, Fast PPT, Slow PPT, APU Slow, skin power and temperature controls for Ryzen AI 7 350, Family 26 Model 96.
-- HP TPP and PLGPU controls, plus **PCF Max (HP unlock)** on Power. The toggle writes only the detected GPU stock ceiling including Dynamic Boost (115/140/175 W), independently of NVIDIA MAX. A detected lower PCF cap is enabled automatically on HP; other manufacturers receive an opt-in dialog. Disabling restores the saved device-specific original PCF cap. No custom PCF wattage field is exposed.
+- Platform PCF controls on Compatibility, labelled ACTargetTPPLimit and ACMaxGPULimit, plus HP PLGPU controls on CPU / HP.
 - Optional official mVolt integration: select its executable, import your own saved v3 profile, review and apply it against a matching adapter/VBIOS.
 
 No personal overclock profile, saved tuning settings, ROM dump, resolver cache or registry backup is included. Clock offsets and automatic reapplication start disabled.

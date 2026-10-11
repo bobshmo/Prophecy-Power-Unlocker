@@ -126,7 +126,7 @@ internal sealed class MainForm : Form { public bool OperationBusy => _busy;
     public event Action? OpenNvidiaRequested;
     private readonly CurrentGpuPower _currentGpu = new();
     private readonly NumericUpDown[] _cpu = Enumerable.Range(0, 6).Select(_ => new NumericUpDown()).ToArray();
-    private readonly NumericUpDown _tpp = new(), _gpu = new(), _plgpu = new(), _nvpWatts = new();
+    private readonly NumericUpDown _gpu = new(), _plgpu = new(), _nvpWatts = new();
     private readonly CheckBox _keep = new() { Text = "Keep all CPU settings active (every second)", Checked = true, AutoSize = true };
     private readonly CheckBox _hpPl = new() { Text = "Apply HP PLGPU", Checked = true, AutoSize = true };
     private readonly CheckBox _hpcm = new() { Text = "HPCM performance mode", Checked = true, AutoSize = true };
@@ -159,8 +159,8 @@ internal sealed class MainForm : Form { public bool OperationBusy => _busy;
         for (int i = 0; i < 6; i++) Field(cpuPanel, labels[i], _cpu[i], 50 + i * 36, i == 5 ? 75 : 45, i == 5 ? 100 : 71, defaults[i]);
         LabelAt(cpuPanel, "Each limit is independent; lower limits can bind first.", 16, 270, 410, 28, 9);
         var gpuPanel = Card("GPU / PLATFORM", 486, 105, 450, 310);
-        Field(gpuPanel, "HP Target TPP (W)", _tpp, 50, 100, 180, 180);
-        gpuPanel.Controls.Add(new Label{Text="PCF Max (HP unlock) is on the Power page",AutoSize=true,Location=new Point(16,86)});
+        LabelAt(gpuPanel,"ACTargetTPPLimit is on Compatibility",16,50,410,27);
+        gpuPanel.Controls.Add(new Label{Text="ACMaxGPULimit is on Compatibility",AutoSize=true,Location=new Point(16,86)});
         _gpu.Enabled = false;
         Field(gpuPanel, "HP PLGPU (W)", _plgpu, 122, 35, 71, 71);
         Field(gpuPanel, "NVIDIA laptop target (W)", _nvpWatts, 158, 0, 0, 0);
@@ -231,7 +231,6 @@ internal sealed class MainForm : Form { public bool OperationBusy => _busy;
     }
     private async Task ApplyGpu()
     {
-        int tpp = (int)_tpp.Value, gpu = (int)_gpu.Value;
         int? pl = _hpPl.Checked ? (int)_plgpu.Value : null; bool hpcm = _hpcm.Checked;
         int nvp = (int)_nvpWatts.Value; bool useNvp = _useNvp.Checked;
 
@@ -242,13 +241,13 @@ internal sealed class MainForm : Form { public bool OperationBusy => _busy;
             ApplyHpState(pl, hpcm);
             using var pcf = new PcfPowerController();
 
-            pcf.SetPowerField(PcfPowerFields.ACTargetTPPLimit, (uint)tpp * 1000);
+
             Thread.Sleep(300);
             var values = pcf.GetPowerValues();
-            if (values.ACTargetTPPLimitInMilliwatts != (uint)tpp * 1000)
+            if (values.ACTargetTPPLimitInMilliwatts == 0)
                 throw new InvalidOperationException("HP/PCF power readback mismatch. NVIDIA target was not applied.");
         });
-        Log($"HP/PCF verified: TPP {tpp} W; GPU cap is controlled by PCF Max toggle; PLGPU {(pl?.ToString() ?? "preserved")}; HPCM {hpcm}. CURRENT applies HPCM again immediately before writing.");
+        Log($"HP/PCF read: ACTargetTPPLimit and ACMaxGPULimit are on Compatibility; PLGPU {(pl?.ToString() ?? "preserved")}; HPCM {hpcm}. CURRENT applies HPCM again immediately before writing.");
         if (useNvp) Log(await Task.Run(() => _currentGpu.Apply(nvp)));
     }
     private async Task ReadGpu()
@@ -270,7 +269,7 @@ internal sealed class MainForm : Form { public bool OperationBusy => _busy;
         int[] defaults = { 45, 45, 45, 45, 45, 100 };
         for (int i = 0; i < 6; i++) _cpu[i].Value = defaults[i];
         try { await ApplyCpu(); } catch (Exception ex) { failures.Add("CPU restore: " + ex.Message); }
-        _tpp.Value = 125; _gpu.Value = 100; _plgpu.Value = 35; _hpPl.Checked = true; _hpcm.Checked = false; _useNvp.Checked = false;
+        _gpu.Value = 100; _plgpu.Value = 35; _hpPl.Checked = true; _hpcm.Checked = false; _useNvp.Checked = false;
         try { await ApplyGpu(); } catch (Exception ex) { failures.Add("HP/PCF restore: " + ex.Message); }
         if (failures.Count > 0) throw new InvalidOperationException("Restore incomplete:\n" + string.Join("\n", failures));
         Log("Tested runtime defaults restored. Advanced NvAPI tuning must be restored in Advanced GPU.");
