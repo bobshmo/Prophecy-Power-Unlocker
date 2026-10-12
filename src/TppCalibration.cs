@@ -18,6 +18,7 @@ internal sealed record TppCalibrationResult(string Identity,int Lower,int Upper,
 }
 internal static class TppCalibration
 {
+    internal static bool CpuLoadAllowsCalibration(double load)=>double.IsFinite(load)&&load>=0&&load<25;
     internal static TppCalibrationResult Run(ITppProbe probe,string identity,int lower,int upper,Action checkIdle,CancellationToken cancel,Action<int>? progress=null,Action? settle=null)
     {
         if(lower<1||upper<lower||upper>1000||upper-lower>300)throw new ArgumentOutOfRangeException(nameof(upper),"Choose a positive test interval of at most 300 W, within 1–1000 W.");
@@ -41,7 +42,7 @@ internal static class TppCalibration
         if(!telemetry.UtilizationPct.HasValue||telemetry.UtilizationPct>10)throw new InvalidOperationException("Close GPU workloads before TPP calibration (GPU must be below 10% load).");
         if(!telemetry.GpuTempC.HasValue||telemetry.GpuTempC>65)throw new InvalidOperationException("GPU temperature must be readable and below 65°C before calibration.");
         double cpuLoad=CpuLoadReader.Read();
-        if(cpuLoad>15)throw new InvalidOperationException($"Close CPU workloads before TPP calibration (current load {cpuLoad:0.#}%; CPU must be below 15%).");
+        if(!CpuLoadAllowsCalibration(cpuLoad))throw new InvalidOperationException($"Close CPU workloads before TPP calibration (current load {cpuLoad:0.#}%; CPU must be below 25%).");
     }
     internal static TppCalibrationResult Calibrate(PlatformPowerScan device,int lower,int upper,CancellationToken cancel,Action<int>? progress)
     {

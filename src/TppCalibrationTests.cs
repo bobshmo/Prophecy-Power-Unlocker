@@ -11,6 +11,7 @@ internal static class TppCalibrationTests
     }
     internal static void Run()
     {
+        if(!TppCalibration.CpuLoadAllowsCalibration(0)||!TppCalibration.CpuLoadAllowsCalibration(24.99)||TppCalibration.CpuLoadAllowsCalibration(25)||TppCalibration.CpuLoadAllowsCalibration(26)||TppCalibration.CpuLoadAllowsCalibration(double.NaN))throw new Exception("CPU calibration threshold must be strictly below 25%.");
         if(CpuLoadReader.Calculate(0,0,0,90,100,0)!=10||CpuLoadReader.Calculate(0,0,0,0,100,0)!=100||CpuLoadReader.Calculate(0,0,0,100,100,0)!=0)throw new Exception("CPU idle accounting failed.");
         bool badCpu=false;try{CpuLoadReader.Calculate(0,0,0,0,0,0);}catch(InvalidOperationException){badCpu=true;}if(!badCpu)throw new Exception("Missing CPU sample accepted as idle.");
         var fake=new Fake();var result=TppCalibration.Run(fake,"test",100,180,()=>{},CancellationToken.None);
