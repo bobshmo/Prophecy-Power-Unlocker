@@ -11,6 +11,8 @@ internal static class TppCalibrationTests
     }
     internal static void Run()
     {
+        if(CpuLoadReader.Calculate(0,0,0,90,100,0)!=10||CpuLoadReader.Calculate(0,0,0,0,100,0)!=100||CpuLoadReader.Calculate(0,0,0,100,100,0)!=0)throw new Exception("CPU idle accounting failed.");
+        bool badCpu=false;try{CpuLoadReader.Calculate(0,0,0,0,0,0);}catch(InvalidOperationException){badCpu=true;}if(!badCpu)throw new Exception("Missing CPU sample accepted as idle.");
         var fake=new Fake();var result=TppCalibration.Run(fake,"test",100,180,()=>{},CancellationToken.None);
         if(result.Accepted.Min()!=110||result.Accepted.Max()!=170||result.Accepted.Length!=61||fake.Value!=125000||fake.Restores!=1)throw new Exception("Calibration clamping/restoration failed.");
         fake=new Fake();var cancel=new CancellationTokenSource();bool cancelled=false;

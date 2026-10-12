@@ -40,10 +40,8 @@ internal static class TppCalibration
         var telemetry=SystemProbe.GetTelemetry();
         if(!telemetry.UtilizationPct.HasValue||telemetry.UtilizationPct>10)throw new InvalidOperationException("Close GPU workloads before TPP calibration (GPU must be below 10% load).");
         if(!telemetry.GpuTempC.HasValue||telemetry.GpuTempC>65)throw new InvalidOperationException("GPU temperature must be readable and below 65°C before calibration.");
-        bool cpuRead=false;
-        using var query=new System.Management.ManagementObjectSearcher("SELECT LoadPercentage FROM Win32_Processor");
-        foreach(System.Management.ManagementObject item in query.Get()){if(item["LoadPercentage"]==null)continue;cpuRead=true;if(Convert.ToInt32(item["LoadPercentage"])>15)throw new InvalidOperationException("Close CPU workloads before TPP calibration (CPU must be below 15% load).");}
-        if(!cpuRead)throw new InvalidOperationException("CPU load is unavailable; calibration was not started.");
+        double cpuLoad=CpuLoadReader.Read();
+        if(cpuLoad>15)throw new InvalidOperationException($"Close CPU workloads before TPP calibration (current load {cpuLoad:0.#}%; CPU must be below 15%).");
     }
     internal static TppCalibrationResult Calibrate(PlatformPowerScan device,int lower,int upper,CancellationToken cancel,Action<int>? progress)
     {
