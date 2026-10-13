@@ -12,7 +12,7 @@ internal static class Program
     {
         if (args.Length == 1 && args[0] == "--self-test")
         {
-            CurrentGpuPower.TestRouting(); HpPlatform.TestCurrentGuard(); GpuDetectionTests.Run(); PcfRange.Test(); FirmwareTests.Run(); TppCalibrationTests.Run();
+            CurrentGpuPower.TestRouting(); HpPlatform.TestCurrentGuard(); GpuDetectionTests.Run(); Omen115RomTests.Run(); PcfRange.Test(); FirmwareTests.Run(); TppCalibrationTests.Run(); PcfGpuTesterTests.Run();
             var good = new CpuSettings(54, 71, 54, 54, 54, 95);
             good.Validate();
             new CpuSettings(45, 45, 45, 45, 45, 100).Validate();

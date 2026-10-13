@@ -19,5 +19,8 @@ internal static class GpuDetectionTests
         if (GpuProfiles.Detect("RTX 4060 Laptop", "PCI\\VEN_10DE&DEV_2882") != null) throw new Exception("Non-laptop device accepted.");
         if (GpuProfiles.Detect("RTX 5060 Laptop", "PCI\\VEN_10DE&DEV_FFFF") != null) throw new Exception("Unknown PCI device accepted.");
         if (GpuProfiles.Detect("RTX 5070 Ti Laptop", "PCI\\VEN_10DE&DEV_2F18")?.Id != "5070ti") throw new Exception("Ti variant misidentified.");
+        var omen=GpuProfiles.Detect("RTX 5070 Ti Laptop",@"PCI\VEN_10DE&DEV_2F58&SUBSYS_8E71103C");
+        if(omen?.StockPowerW!=115||omen.MinW!=115||!omen.IsInRange(115)||omen.IsReferenceValidated(140))throw new Exception("HP OMEN 115 W variant was not scoped correctly.");
+        if(GpuProfiles.Detect("RTX 5070 Ti Laptop",@"PCI\VEN_10DE&DEV_2F58&SUBSYS_1234103C")?.StockPowerW!=140)throw new Exception("Unreviewed 5070 Ti board inherited HP stock limits.");
     }
 }

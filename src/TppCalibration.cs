@@ -6,9 +6,10 @@ internal sealed class PcfTppProbe : ITppProbe
 {
     private readonly PcfPowerController _controller=new();
     private readonly PcfPowerValues _original;
-    public PcfTppProbe(){_original=_controller.GetPowerValues();}
-    public uint Read()=>_controller.GetPowerValues().ACTargetTPPLimitInMilliwatts;
-    public void Write(uint value)=>_controller.SetPowerField(PcfPowerFields.ACTargetTPPLimit,value);
+    private readonly PcfPowerFields _field;
+    public PcfTppProbe(PcfPowerFields field=PcfPowerFields.ACTargetTPPLimit){_field=field;_original=_controller.GetPowerValues();}
+    public uint Read(){var v=_controller.GetPowerValues();return _field==PcfPowerFields.ACMaxGPULimit?v.ACMaxGPULimitInMilliwatts:v.ACTargetTPPLimitInMilliwatts;}
+    public void Write(uint value)=>_controller.SetPowerField(_field,value);
     public void Restore(){_controller.RestoreStartupSnapshot();var actual=_controller.GetPowerValues();if(actual.ACTargetTPPLimitInMilliwatts!=_original.ACTargetTPPLimitInMilliwatts||actual.ACDefaultGPULimitInMilliwatts!=_original.ACDefaultGPULimitInMilliwatts||actual.ACMinGPULimitInMilliwatts!=_original.ACMinGPULimitInMilliwatts||actual.ACMaxGPULimitInMilliwatts!=_original.ACMaxGPULimitInMilliwatts)throw new InvalidOperationException("Original PCF snapshot restoration did not match readback.");}
     public void Dispose()=>_controller.Dispose();
 }
