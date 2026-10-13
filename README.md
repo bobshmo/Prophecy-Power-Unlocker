@@ -1,6 +1,6 @@
 # Prophecy Power Unlocker
 
-**ACTargetTPPLimit** and **ACMaxGPULimit** are on Compatibility. Scan laptop / GPU reads the current PCF values and looks for explicit firmware default and upper-bound metadata in watts. Valid reported bounds enable adjustment from stock to detected maximum. If no valid bounds are advertised, adjustment is unavailable. Current targets and GPU-model tables are not treated as detected platform maxima. Apply rechecks identity/range and verifies PCF readback.
+**ACTargetTPPLimit** and **ACMaxGPULimit** are on Compatibility. Version 1.2.5 restores the PCF Max baseline toggle and adds **Test all PCF GPU values** alongside TPP calibration. If firmware bounds are unavailable, the tester enables matching positive targets and reports its profile test ceiling separately from a detected hardware maximum. See [PCF GPU controls and tester](docs/PCF-GPU-TESTER.md).
 
 ## Resolving an unknown VBIOS
 
@@ -8,7 +8,7 @@ This local package includes the Blackwell `nvflashb.exe` release from https://gi
 
 Windows control panel combining NVIDIA laptop power control and telemetry, HP Victus platform controls, and optional mVolt profile import.
 
-[Download the Windows release](https://github.com/bobshmo/Prophecy-Power-Unlocker/releases/latest)
+[Download Prophecy 1.2.5 for Windows x64](https://github.com/bobshmo/Prophecy-Power-Unlocker/releases/download/v1.2.5/Prophecy-Power-Unlocker-1.2.5-win-x64.zip) · [Release notes and checksums](https://github.com/bobshmo/Prophecy-Power-Unlocker/releases/tag/v1.2.5)
 
 ## Features
 
