@@ -121,14 +121,14 @@ namespace NvpwrControlBlackwell
                         }
                         catch (Exception ex)
                         {
-                            AppLog.Write("MsiScenarioWatcher callback error: " + ex.Message);
+                            AppLog.Write("MsiScenarioWatcher callback error: " + SafeError.Describe(ex));
                         }
                     }
                 }
             }
             catch (Exception ex)
             {
-                AppLog.Write("MsiScenarioWatcher thread exited: " + ex.Message);
+                AppLog.Write("MsiScenarioWatcher thread exited: " + SafeError.Describe(ex));
             }
             finally
             {

@@ -111,7 +111,7 @@ namespace NvpwrControlBlackwell
             }
             catch (Exception ex)
             {
-                r.Reason = "Driver resolver error: " + ex.Message;
+                r.Reason = "Driver resolver error: " + SafeError.Describe(ex);
                 return r;
             }
         }
@@ -238,7 +238,7 @@ namespace NvpwrControlBlackwell
             }
             catch (Exception ex)
             {
-                error = ex.Message;
+                error = SafeError.Describe(ex);
                 return false;
             }
         }

@@ -21,17 +21,17 @@ internal sealed partial class MainForm
    if(!detected.Hp&&detected.Restricted)enable=MessageBox.Show(this,$"Enable ACMaxGPULimit baseline {detected.StockW} W on this non-HP board?","Enable PCF baseline",MessageBoxButtons.YesNo,MessageBoxIcon.Question,MessageBoxDefaultButton.Button2)==DialogResult.Yes;
    if(enable){report.Text=await Task.Run(()=>PcfUnlock.Apply(detected,true));detected=await Task.Run(PcfUnlock.Scan);}
    UpdateToggle(detected);
-  }catch(Exception ex){report.Text=ex.Message;}finally{_busy=false;detect.Enabled=true;UpdateWriteButtons();}};
+  }catch(Exception ex){report.Text=SafeError.Describe(ex);}finally{_busy=false;detect.Enabled=true;UpdateWriteButtons();}};
   toggle.CheckedChanged+=async(_,_)=>{if(updating)return;if(_busy||detected==null){if(detected!=null)UpdateToggle(detected);return;}bool enable=toggle.Checked;
    if(enable&&!detected.Hp&&MessageBox.Show(this,"Enable the PCF baseline on this non-HP board?","Enable PCF baseline",MessageBoxButtons.YesNo,MessageBoxIcon.Question,MessageBoxDefaultButton.Button2)!=DialogResult.Yes){UpdateToggle(detected);return;}
-   _busy=true;toggle.Enabled=false;UpdateWriteButtons();try{report.Text=await Task.Run(()=>PcfUnlock.Apply(detected,enable));}catch(Exception ex){report.Text=ex.Message;}finally{try{detected=await Task.Run(PcfUnlock.Scan);UpdateToggle(detected);}catch{toggle.Enabled=false;}_busy=false;UpdateWriteButtons();}
+   _busy=true;toggle.Enabled=false;UpdateWriteButtons();try{report.Text=await Task.Run(()=>PcfUnlock.Apply(detected,enable));}catch(Exception ex){report.Text=SafeError.Describe(ex);}finally{try{detected=await Task.Run(PcfUnlock.Scan);UpdateToggle(detected);}catch{toggle.Enabled=false;}_busy=false;UpdateWriteButtons();}
   };
   cancel.Click+=(_,_)=>cancellation?.Cancel();
   test.Click+=async(_,_)=>{if(_busy)return;
    if(MessageBox.Show(this,"Test every whole-watt ACMaxGPULimit target from zero? Zero can have special controller semantics. The original PCF snapshot will be restored. Accepted readback does not establish safe operating power. Close games and other power-control apps.","Confirm PCF GPU tester",MessageBoxButtons.YesNo,MessageBoxIcon.Question,MessageBoxDefaultButton.Button2)!=DialogResult.Yes)return;
    _busy=true;test.Enabled=false;detect.Enabled=false;toggle.Enabled=false;cancel.Enabled=true;UpdateWriteButtons();cancellation=new CancellationTokenSource();
    try{var device=await Task.Run(()=>TppControl.Scan(PcfPowerFields.ACMaxGPULimit));_pcfGpuTest=await Task.Run(()=>PcfGpuTester.Test(device,cancellation.Token,w=>BeginInvoke(new Action(()=>report.Text=$"Testing ACMaxGPULimit {w} W; original PCF snapshot will be restored."))));report.Text=_pcfGpuTest.Describe();}
-   catch(OperationCanceledException){report.Text="Cancelled; original PCF snapshot restored.";}catch(Exception ex){report.Text="Test stopped: "+ex.Message;}
+   catch(OperationCanceledException){report.Text="Cancelled; original PCF snapshot restored.";}catch(Exception ex){report.Text="Test stopped: "+SafeError.Describe(ex);}
    finally{cancellation.Dispose();cancellation=null;_busy=false;test.Enabled=true;detect.Enabled=true;cancel.Enabled=false;UpdateWriteButtons();await ScanPlatformPowerAsync();}
   };
  }

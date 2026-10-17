@@ -105,7 +105,7 @@ internal sealed class MvoltPanel : UserControl
     {
         var b = new Button { Text = text, AutoSize = true, Height = 34 };
         b.Click += async (_, _) => { if (Busy) return; Busy = true; _buttons.Enabled = false;
-            try { await action(); } catch (Exception ex) { Log("ERROR: " + ex.Message); }
+            try { await action(); } catch (Exception ex) { Log("ERROR: " + SafeError.Describe(ex)); }
             finally { Busy = false; _buttons.Enabled = true; } };
         _buttons.Controls.Add(b);
     }

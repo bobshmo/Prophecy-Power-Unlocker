@@ -12,7 +12,7 @@ internal static class Program
     {
         if (args.Length == 1 && args[0] == "--self-test")
         {
-            CurrentGpuPower.TestRouting(); HpPlatform.TestCurrentGuard(); GpuDetectionTests.Run(); Omen115RomTests.Run(); PcfRange.Test(); FirmwareTests.Run(); TppCalibrationTests.Run(); PcfGpuTesterTests.Run();
+            SafeErrorTests.Run(); CurrentGpuPower.TestRouting(); HpPlatform.TestCurrentGuard(); GpuDetectionTests.Run(); Omen115RomTests.Run(); PcfRange.Test(); FirmwareTests.Run(); TppCalibrationTests.Run(); PcfGpuTesterTests.Run();
             var good = new CpuSettings(54, 71, 54, 54, 54, 95);
             good.Validate();
             new CpuSettings(45, 45, 45, 45, 45, 100).Validate();
@@ -258,19 +258,19 @@ internal sealed class MainForm : Form { public bool OperationBusy => _busy;
             var result = await Task.Run(() => { using var pcf = new PcfPowerController(); var v = pcf.GetPowerValues(); return $"PCF TPP {FormatWatts(v.ACTargetTPPLimitInMilliwatts)}; GPU max {FormatWatts(v.ACMaxGPULimitInMilliwatts)}"; });
             Log(result);
         }
-        catch (Exception ex) { Log("PCF read unavailable: " + ex.Message); }
+        catch (Exception ex) { Log("PCF read unavailable: " + SafeError.Describe(ex)); }
         Log(await Task.Run(() => _currentGpu.Read()));
     }
     private async Task Restore()
     {
         _timer.Stop(); _held = null;
         var failures = new List<string>();
-        try { Log(await Task.Run(() => _currentGpu.Restore())); } catch (Exception ex) { failures.Add("NVIDIA power restore: " + ex.Message); }
+        try { Log(await Task.Run(() => _currentGpu.Restore())); } catch (Exception ex) { failures.Add("NVIDIA power restore: " + SafeError.Describe(ex)); }
         int[] defaults = { 45, 45, 45, 45, 45, 100 };
         for (int i = 0; i < 6; i++) _cpu[i].Value = defaults[i];
-        try { await ApplyCpu(); } catch (Exception ex) { failures.Add("CPU restore: " + ex.Message); }
+        try { await ApplyCpu(); } catch (Exception ex) { failures.Add("CPU restore: " + SafeError.Describe(ex)); }
         _gpu.Value = 100; _plgpu.Value = 35; _hpPl.Checked = true; _hpcm.Checked = false; _useNvp.Checked = false;
-        try { await ApplyGpu(); } catch (Exception ex) { failures.Add("HP/PCF restore: " + ex.Message); }
+        try { await ApplyGpu(); } catch (Exception ex) { failures.Add("HP/PCF restore: " + SafeError.Describe(ex)); }
         if (failures.Count > 0) throw new InvalidOperationException("Restore incomplete:\n" + string.Join("\n", failures));
         Log("Tested runtime defaults restored. Advanced NvAPI tuning must be restored in Advanced GPU.");
     }
@@ -285,7 +285,7 @@ internal sealed class MainForm : Form { public bool OperationBusy => _busy;
         _busy = true; UseWaitCursor = true;
         foreach (var button in _buttons) button.Enabled = false;
         try { await action(); }
-        catch (Exception ex) { Log("ERROR: " + ex.Message); }
+        catch (Exception ex) { Log("ERROR: " + SafeError.Describe(ex)); }
         finally { _busy = false; UseWaitCursor = false; foreach (var button in _buttons) button.Enabled = true; }
     }
     private void Log(string text) => _log.AppendText($"[{DateTime.Now:HH:mm:ss}] {text}{Environment.NewLine}");

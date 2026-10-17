@@ -88,7 +88,7 @@ namespace NvpwrControlBlackwell
                 s.Supported = false;
                 s.CurrentWritesReady = false;
                 s.MaxWritesReady = false;
-                s.Reason = ex.Message;
+                s.Reason = SafeError.Describe(ex);
             }
             return s;
         }
@@ -602,7 +602,7 @@ namespace NvpwrControlBlackwell
             }
             catch (Exception ex)
             {
-                AppLog.Write("Warning writing driver registry voltage override: " + ex.Message);
+                AppLog.Write("Warning writing driver registry voltage override: " + SafeError.Describe(ex));
             }
 
             TunerState post;
@@ -638,7 +638,7 @@ namespace NvpwrControlBlackwell
             }
             catch (Exception ex)
             {
-                AppLog.Write("Warning removing driver registry voltage override: " + ex.Message);
+                AppLog.Write("Warning removing driver registry voltage override: " + SafeError.Describe(ex));
             }
 
             TunerState post;
@@ -661,7 +661,7 @@ namespace NvpwrControlBlackwell
             }
             catch (Exception ex)
             {
-                AppLog.Write("WriteRegistryOverride failed for " + subKeyPath + "\\" + name + ": " + ex.Message);
+                AppLog.Write("WriteRegistryOverride failed for " + subKeyPath + "\\" + name + ": " + SafeError.Describe(ex));
             }
         }
 
@@ -676,7 +676,7 @@ namespace NvpwrControlBlackwell
             }
             catch (Exception ex)
             {
-                AppLog.Write("DeleteRegistryOverride failed for " + subKeyPath + "\\" + name + ": " + ex.Message);
+                AppLog.Write("DeleteRegistryOverride failed for " + subKeyPath + "\\" + name + ": " + SafeError.Describe(ex));
             }
         }
 
@@ -818,7 +818,7 @@ namespace NvpwrControlBlackwell
             }
             catch (Exception ex)
             {
-                return OperationResult.Fail("E633 transport exception: " + ex.Message);
+                return OperationResult.Fail("E633 transport exception: " + SafeError.Describe(ex));
             }
         }
 
@@ -916,7 +916,7 @@ namespace NvpwrControlBlackwell
                 if (rc != 0 || !File.Exists(file)) { error = output.Trim(); return false; }
                 return true;
             }
-            catch (Exception ex) { error = ex.Message; return false; }
+            catch (Exception ex) { error = SafeError.Describe(ex); return false; }
         }
 
         private static uint U32(byte[] b, int off)

@@ -265,7 +265,7 @@ namespace NvpwrControlBlackwell
             }
             catch (Exception ex)
             {
-                AppLog.Write("StartShowWindowListener error: " + ex.Message);
+                AppLog.Write("StartShowWindowListener error: " + SafeError.Describe(ex));
             }
         }
 
@@ -332,7 +332,7 @@ namespace NvpwrControlBlackwell
             }
             catch (Exception ex)
             {
-                AppLog.Write("InitTrayIcon error: " + ex.Message);
+                AppLog.Write("InitTrayIcon error: " + SafeError.Describe(ex));
             }
         }
 
@@ -380,7 +380,7 @@ namespace NvpwrControlBlackwell
             }
             catch (Exception ex)
             {
-                AppLog.Write("ReapplyAll error: " + ex.Message);
+                AppLog.Write("ReapplyAll error: " + SafeError.Describe(ex));
             }
         }
 
@@ -521,14 +521,14 @@ namespace NvpwrControlBlackwell
             scanWmi.Click+=async(_,_)=>{
                 if(_busy)return;_busy=true;UpdateWriteButtons();
                 try{int watts=_currentSlider.Value;_hpModeScan=await Task.Run(()=>VictusPowerUnlockGui.HpWmiMode.Scan(watts));_hpModeState.Text=_hpModeScan.Details;_hpModeToggle.Enabled=true;}
-                catch(Exception ex){_hpModeState.Text=ex.Message;_hpModeToggle.Enabled=false;}
+                catch(Exception ex){_hpModeState.Text=SafeError.Describe(ex);_hpModeToggle.Enabled=false;}
                 finally{_busy=false;UpdateWriteButtons();}
             };
             _hpModeToggle.CheckedChanged+=async(_,_)=>{
                 if(_hpModeUpdating||_busy||_hpModeScan==null)return;
                 bool enabled=_hpModeToggle.Checked;_busy=true;_hpModeToggle.Enabled=false;UpdateWriteButtons();
                 try{_hpModeState.Text=await Task.Run(()=>VictusPowerUnlockGui.HpWmiMode.Apply(_hpModeScan,enabled));}
-                catch(Exception ex){_hpModeState.Text=ex.Message;_hpModeUpdating=true;_hpModeToggle.Checked=!enabled;_hpModeUpdating=false;}
+                catch(Exception ex){_hpModeState.Text=SafeError.Describe(ex);_hpModeUpdating=true;_hpModeToggle.Checked=!enabled;_hpModeUpdating=false;}
                 finally{_busy=false;_hpModeToggle.Enabled=true;UpdateWriteButtons();}
             };
 
@@ -913,7 +913,7 @@ namespace NvpwrControlBlackwell
                 using var dialog=new OpenFileDialog{Filter="GPU ROM|*.rom;*.bin",Title="Import a ROM for the detected GPU"};
                 if(dialog.ShowDialog(this)!=DialogResult.OK)return;
                 try{_importedRom=null;_importedRom=FirmwareTools.Import(dialog.FileName,_compat.GpuPnpId);ShowResult(OperationResult.Ok("Imported "+Path.GetFileName(_importedRom.Path)+"; SHA256 "+_importedRom.Sha256+". No firmware written."));}
-                catch(Exception ex){ShowResult(OperationResult.Fail(ex.Message));}
+                catch(Exception ex){ShowResult(OperationResult.Fail(SafeError.Describe(ex)));}
             };
             flashRom.Click+=async(_,_)=>{
                 if(_busy)return;
@@ -1364,7 +1364,7 @@ namespace NvpwrControlBlackwell
                 if (_settings.TelemetryEnabled && Visible && WindowState != FormWindowState.Minimized)
                     RefreshTelemetryAsync();
             }
-            catch (Exception ex) { SetStatus(ex.Message); }
+            catch (Exception ex) { SetStatus(SafeError.Describe(ex)); }
             finally { _busy = false; UpdateWriteButtons(); }
         }
 
@@ -1381,7 +1381,7 @@ namespace NvpwrControlBlackwell
                 UpdateTelemetry(t);
                 if (_telemetryStatusLabel != null) _telemetryStatusLabel.Text = "Updated " + DateTime.Now.ToString("HH:mm:ss") + (String.IsNullOrEmpty(t.Error) ? "" : " | " + t.Error);
             }
-            catch (Exception ex) { AppLog.Write("Telemetry: " + ex.Message); if (_telemetryStatusLabel != null) _telemetryStatusLabel.Text = "Telemetry error: " + ex.Message; }
+            catch (Exception ex) { AppLog.Write("Telemetry: " + SafeError.Describe(ex)); if (_telemetryStatusLabel != null) _telemetryStatusLabel.Text = "Telemetry error: " + SafeError.Describe(ex); }
             finally { _telemetryBusy = false; }
         }
 
@@ -1395,7 +1395,7 @@ namespace NvpwrControlBlackwell
                 UpdateTelemetry(t);
                 if (_telemetryStatusLabel != null) _telemetryStatusLabel.Text = "Updated " + DateTime.Now.ToString("HH:mm:ss") + (String.IsNullOrEmpty(t.Error) ? "" : " | " + t.Error);
             }
-            catch (Exception ex) { AppLog.Write("Telemetry: " + ex.Message); if (_telemetryStatusLabel != null) _telemetryStatusLabel.Text = "Telemetry error: " + ex.Message; }
+            catch (Exception ex) { AppLog.Write("Telemetry: " + SafeError.Describe(ex)); if (_telemetryStatusLabel != null) _telemetryStatusLabel.Text = "Telemetry error: " + SafeError.Describe(ex); }
             finally { _telemetryBusy = false; }
         }
 
@@ -1832,7 +1832,7 @@ namespace NvpwrControlBlackwell
                 using var toolDialog = new OpenFileDialog { Filter="NVFlash|nvflashb.exe;nvflash64.exe", Title="Select extracted NVFlash to read your GPU ROM" };
                 if (toolDialog.ShowDialog(this) != DialogResult.OK) return;
                 try { VbiosResolver.SelectNvflash(toolDialog.FileName); }
-                catch(Exception ex) { ShowResult(OperationResult.Fail(ex.Message)); return; }
+                catch(Exception ex) { ShowResult(OperationResult.Fail(SafeError.Describe(ex))); return; }
             }
             if (_busy) return; _busy = true; UpdateWriteButtons(); SetStatus(T("resolvingVbios"));
             try
@@ -1844,7 +1844,7 @@ namespace NvpwrControlBlackwell
             }
             catch (Exception ex)
             {
-                ShowResult(OperationResult.Fail(ex.Message));
+                ShowResult(OperationResult.Fail(SafeError.Describe(ex)));
             }
             finally
             {
@@ -1976,7 +1976,7 @@ namespace NvpwrControlBlackwell
             }
             catch (Exception ex)
             {
-                ShowResult(OperationResult.Fail(ex.Message));
+                ShowResult(OperationResult.Fail(SafeError.Describe(ex)));
             }
             finally
             {
@@ -2009,7 +2009,7 @@ namespace NvpwrControlBlackwell
             }
             catch (Exception ex)
             {
-                ShowResult(OperationResult.Fail(ex.Message));
+                ShowResult(OperationResult.Fail(SafeError.Describe(ex)));
             }
             finally
             {

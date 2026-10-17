@@ -32,7 +32,7 @@ internal sealed class SuiteForm : Form
                 fanToggle.CheckState = actual.HasValue ? (actual.Value ? CheckState.Checked : CheckState.Unchecked) : CheckState.Indeterminate;
                 fanStatus.Text = actual.HasValue ? (actual.Value ? "Maximum fans active." : "Fan Max off — firmware controls fan speed.") : "Fan Max state unavailable.";
             }
-            catch (Exception ex) { fanStatus.Text = ex.Message; }
+            catch (Exception ex) { fanStatus.Text = SafeError.Describe(ex); }
             finally { _updatingFan = false; _fanBusy = false; fanToggle.ThreeState = false; fanToggle.Enabled = true; }
         }
         fanToggle.CheckedChanged += async (_, _) =>
@@ -47,7 +47,7 @@ internal sealed class SuiteForm : Form
             catch (Exception ex)
             {
                 _updatingFan = true; fanToggle.CheckState = CheckState.Indeterminate; _updatingFan = false;
-                fanStatus.Text = ex.Message;
+                fanStatus.Text = SafeError.Describe(ex);
             }
             finally { _fanBusy = false; fanToggle.Enabled = true; }
         };

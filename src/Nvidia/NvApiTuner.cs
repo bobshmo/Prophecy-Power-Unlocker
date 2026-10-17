@@ -228,7 +228,7 @@ namespace NvpwrControlBlackwell
                     string rollbackError;
                     RestoreRollback(s, rb, out rollbackError);
                     ProbeWithSession(s, post, allowMsvdd);
-                    string msg = ex.Message;
+                    string msg = SafeError.Describe(ex);
                     if (!String.IsNullOrEmpty(rollbackError)) msg += " | rollback: " + rollbackError;
                     AppLog.Write("OC apply failed: " + msg);
                     return OperationResult.Fail(msg);

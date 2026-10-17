@@ -183,7 +183,7 @@ namespace NvpwrControlBlackwell
             }
             catch (Exception ex)
             {
-                AppLog.Write("Autostart exception: " + ex.ToString());
+                AppLog.Write("Autostart exception: " + SafeError.Details(ex));
             }
         }
     }
