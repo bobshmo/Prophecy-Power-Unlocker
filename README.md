@@ -1,5 +1,7 @@
 # Prophecy Power Unlocker
 
+> **Experimental hardware tuning — use at your own risk.** Changing power, voltage, clocks, platform controls or firmware can cause instability, data loss or permanent hardware damage. Accepted settings do not prove safe or supported operation, and an unlock or performance gain is not guaranteed. Provided without warranty to the extent permitted by law. Read the [legal and hardware-risk notices](LEGAL.md) and [third-party license notices](THIRD-PARTY-NOTICES.md) before use. This is an independent project, not endorsed by NVIDIA or HP.
+
 **ACTargetTPPLimit** and **ACMaxGPULimit** are on Compatibility. Version 1.2.5 restores the PCF Max baseline toggle and adds **Test all PCF GPU values** alongside TPP calibration. If firmware bounds are unavailable, the tester enables matching positive targets and reports its profile test ceiling separately from a detected hardware maximum. See [PCF GPU controls and tester](docs/PCF-GPU-TESTER.md).
 
 ## Resolving an unknown VBIOS
