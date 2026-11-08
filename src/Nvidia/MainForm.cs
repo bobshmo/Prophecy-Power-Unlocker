@@ -18,6 +18,8 @@ namespace NvpwrControlBlackwell
         public bool OperationBusy { get { return _busy; } }
         public void CloseForSuite() { _forceExit = true; Close(); }
         private bool _busy;
+        private bool _loadingPowerTargets;
+        private readonly bool _previewOnly;
         private bool _telemetryBusy;
         private bool _autoVbiosAttempted;
         private ImportedRom? _importedRom;
@@ -104,8 +106,9 @@ namespace NvpwrControlBlackwell
 
         public MainForm(bool startMinimized = false, bool preview = false)
         {
+            _previewOnly = preview;
             _startMinimized = startMinimized;
-            _settings = SettingsStore.Load();
+            _settings = preview ? new AppSettings() : SettingsStore.Load();
             _userScale = _settings.UiScalePercent / 100.0;
             _msiWatcher = new MsiScenarioWatcher(HandleMsiScenarioChanged);
             _msiWatcher.TimeoutSec = _settings.MsiTimeoutSec;
@@ -177,6 +180,7 @@ namespace NvpwrControlBlackwell
                 }
 
                 _forceExit = true;
+                _loadObservationCancel?.Cancel();
                 if (_timer != null)
                 {
                     _timer.Stop();
@@ -654,9 +658,9 @@ namespace NvpwrControlBlackwell
             _restoreVolt.Click += delegate { RestoreVoltageAsync(); };
             _autostart.Click += delegate { SaveAutostartAsync(); };
             _removeAutostart.Click += delegate { RunOperationAsync(delegate { return _power.RemoveAutostart(); }, true); };
-            _maxSlider.ValueChanged += delegate { _settings.MaxSelection = _maxSlider.Value; UpdatePowerTargetLabels(); SaveSettings(); };
-            _currentSlider.ValueChanged += delegate { _settings.CurrentSelection = _currentSlider.Value; UpdatePowerTargetLabels(); UpdateExperimentalLabel(); SaveSettings(); };
-            _voltSlider.ValueChanged += delegate { _settings.VoltageSelection = _voltSlider.Value; UpdateVoltageTargetLabels(); SaveSettings(); };
+            _maxSlider.ValueChanged += delegate { if (!_loadingPowerTargets) { _settings.MaxSelection = _maxSlider.Value; SaveSettings(); } UpdatePowerTargetLabels(); };
+            _currentSlider.ValueChanged += delegate { if (!_loadingPowerTargets) { _settings.CurrentSelection = _currentSlider.Value; SaveSettings(); } UpdatePowerTargetLabels(); UpdateExperimentalLabel(); };
+            _voltSlider.ValueChanged += delegate { if (!_loadingPowerTargets) { _settings.VoltageSelection = _voltSlider.Value; SaveSettings(); } UpdateVoltageTargetLabels(); };
         }
 
         private void BuildTunePage()
@@ -871,6 +875,7 @@ namespace NvpwrControlBlackwell
         {
             FlowLayoutPanel root = VerticalRoot(_pageCompat);
             AddPlatformPowerControls(root);
+            AddPowerRecoveryControls(root);
             root.Controls.Add(SectionHeader("compatSection", "compatSectionSub"));
 
             TableLayoutPanel statusGrid = new TableLayoutPanel
@@ -1436,6 +1441,9 @@ namespace NvpwrControlBlackwell
             if (oldMax == 0 || !p.IsInRange(oldMax)) oldMax = stockW;
             if (oldCur < 1 || oldCur > int.MaxValue/1000) oldCur = stockW;
 
+            _loadingPowerTargets = true;
+            try
+            {
             _maxSlider.SetRange(p.MinW, p.MaxPowerW, 5);
             _currentSlider.SetRange(1, liveMax.HasValue&&liveMax.Value>=1&&liveMax.Value<=int.MaxValue/1000?(int)Math.Floor(liveMax.Value):p.MaxPowerW, 1);
             _maxSlider.Value = oldMax;
@@ -1453,6 +1461,8 @@ namespace NvpwrControlBlackwell
                 _voltSlider.Enabled = true;
                 _settings.VoltageSelection = oldVolt;
             }
+            }
+            finally { _loadingPowerTargets = false; }
             _powerRange.Text = T("profileRange") + ": " + p.MinW.ToString() + "–" + p.MaxPowerW.ToString() + " W";
             UpdatePowerTargetLabels();
             SaveSettings();
@@ -1471,7 +1481,7 @@ namespace NvpwrControlBlackwell
             if (_voltStatus != null && _voltSlider != null)
             {
                 if (_voltSlider.Value > 940)
-                    _voltStatus.Text = "Target " + _voltSlider.Value.ToString() + " mV: Enforces boost clock to curve target point via NVML & unlocks 940 mV ceiling.";
+                    _voltStatus.Text = "Target " + _voltSlider.Value.ToString() + " mV: Caps the V/F curve frequency at the selected voltage point; actual voltage is driver-controlled.";
                 else
                     _voltStatus.Text = "Stock mobile voltage ceiling (940 mV VRel limit).";
             }
@@ -1480,7 +1490,13 @@ namespace NvpwrControlBlackwell
         private void UpdatePowerUi(PowerState p, int? overrideTarget)
         {
             if (p == null) p = new PowerState();
-            if(p.MaxW.HasValue && p.MaxW.Value>=1 && p.MaxW.Value<=int.MaxValue/1000){int selected=_settings.CurrentSelection;_currentSlider.SetRange(1,(int)Math.Floor(p.MaxW.Value),1);_currentSlider.Value=Math.Clamp(selected,1,(int)Math.Floor(p.MaxW.Value));}
+            if(p.MaxW.HasValue && p.MaxW.Value>=1 && p.MaxW.Value<=int.MaxValue/1000)
+            {
+                int selected=_settings.CurrentSelection;
+                _loadingPowerTargets=true;
+                try { _currentSlider.SetRange(1,(int)Math.Floor(p.MaxW.Value),1); _currentSlider.Value=Math.Clamp(selected,1,(int)Math.Floor(p.MaxW.Value)); }
+                finally { _loadingPowerTargets=false; }
+            }
             _powerCurrent.Text = W(p.CurrentW);
             _powerMax.Text = W(p.MaxW);
 
@@ -2080,6 +2096,8 @@ namespace NvpwrControlBlackwell
             _pagePower.BringToFront(); if (page == "tuning") _pageTune.BringToFront(); if (page == "telemetry") _pageTelemetry.BringToFront(); if (page == "compatibility") _pageCompat.BringToFront(); if (page == "settings") _pageSettings.BringToFront();
             SetNavActive(_navPower, page == "power"); SetNavActive(_navTune, page == "tuning"); SetNavActive(_navTelemetry, page == "telemetry"); SetNavActive(_navCompat, page == "compatibility"); SetNavActive(_navSettings, page == "settings");
             foreach(var entry in _extraPages){bool active=entry.Key==page;entry.Value.Page.Visible=active;if(active)entry.Value.Page.BringToFront();SetNavActive(entry.Value.Button,active);}
+            _content.PerformLayout();
+            LayoutResponsivePages();
             if(page=="compatibility"&&IsHandleCreated)BeginInvoke(new Action(()=>_pageCompat.AutoScrollPosition=Point.Empty));
         }
 
@@ -2405,6 +2423,7 @@ namespace NvpwrControlBlackwell
 
         private void SaveSettings()
         {
+            if (_previewOnly) return;
             try
             {
                 if (WindowState == FormWindowState.Normal)

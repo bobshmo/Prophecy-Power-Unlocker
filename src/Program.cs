@@ -12,7 +12,8 @@ internal static class Program
     {
         if (args.Length == 1 && args[0] == "--self-test")
         {
-            SafeErrorTests.Run(); CurrentGpuPower.TestRouting(); HpPlatform.TestCurrentGuard(); GpuDetectionTests.Run(); Omen115RomTests.Run(); PcfRange.Test(); FirmwareTests.Run(); TppCalibrationTests.Run(); PcfGpuTesterTests.Run();
+            NvpwrControlBlackwell.DriverValidationGuard.Test();
+            NvpwrControlBlackwell.F7ContributionReadback.Test(); NvpwrControlBlackwell.NvApiTuner.TestCurveControlMapping(); SafeErrorTests.Run(); CurrentGpuPower.TestRouting(); HpPlatform.TestCurrentGuard(); GpuDetectionTests.Run(); Omen115RomTests.Run(); PcfRange.Test(); FirmwareTests.Run(); TppCalibrationTests.Run(); PcfGpuTesterTests.Run(); PcfBaselineTests.Run(); PcfControllerDiscoveryTests.Run(); PlatformPowerTransactionTests.Run(); GpuLoadVerificationTests.Run(); NvpwrControlBlackwell.MainForm.TestPowerTargetRetention();
             var good = new CpuSettings(54, 71, 54, 54, 54, 95);
             good.Validate();
             new CpuSettings(45, 45, 45, 45, 45, 100).Validate();
@@ -29,6 +30,15 @@ internal static class Program
                 }
             }
             if (good.Fast != 71 || good.Stapm != 54) throw new Exception("Independent settings were lost.");
+            return;
+        }
+        if (args.Length == 2 && args[0] == "--read-platform-policy") { File.WriteAllText(args[1], System.Text.Json.JsonSerializer.Serialize(NvpwrControlBlackwell.PlatformPolicyEvidence.Read(), new System.Text.Json.JsonSerializerOptions { WriteIndented = true })); return; }
+        if (args.Length == 2 && args[0] == "--read-vf-curve") { File.WriteAllText(args[1], System.Text.Json.JsonSerializer.Serialize(NvpwrControlBlackwell.VfCurveEvidence.Read(), new System.Text.Json.JsonSerializerOptions { WriteIndented = true })); return; }
+        if (args.Length == 2 && args[0] == "--read-board-power") { File.WriteAllText(args[1], System.Text.Json.JsonSerializer.Serialize(NvpwrControlBlackwell.ClientPowerReadback.ReadBoard(), new System.Text.Json.JsonSerializerOptions { WriteIndented = true })); return; }
+        if (args.Length == 2 && args[0] == "--read-client-power") { File.WriteAllText(args[1], System.Text.Json.JsonSerializer.Serialize(NvpwrControlBlackwell.ClientPowerReadback.ReadSources(), new System.Text.Json.JsonSerializerOptions { WriteIndented = true })); return; }
+        if (args.Length == 2 && args[0] == "--read-pcf-discovery")
+        {
+            File.WriteAllText(args[1], System.Text.Json.JsonSerializer.Serialize(PcfControllerDiscovery.ReadMetadata(), new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
             return;
         }
         if (args.Any(a => a == "--silent" || a == "--tray" || a == "--background" || a == "--minimized")) { NvpwrControlBlackwell.Program.Main(args); return; }
@@ -238,16 +248,9 @@ internal sealed class MainForm : Form { public bool OperationBusy => _busy;
         {
             var profile = new NvpwrControlBlackwell.PowerBackend().GetProfile();
 
-            ApplyHpState(pl, hpcm);
-            using var pcf = new PcfPowerController();
-
-
-            Thread.Sleep(300);
-            var values = pcf.GetPowerValues();
-            if (values.ACTargetTPPLimitInMilliwatts == 0)
-                throw new InvalidOperationException("HP/PCF power readback mismatch. NVIDIA target was not applied.");
+            PlatformPowerTransaction.ApplyHpSettings(() => ApplyHpState(pl, hpcm));
         });
-        Log($"HP/PCF read: ACTargetTPPLimit and ACMaxGPULimit are on Compatibility; PLGPU {(pl?.ToString() ?? "preserved")}; HPCM {hpcm}. CURRENT applies HPCM again immediately before writing.");
+        Log($"HP settings applied with the existing PCF budget, Dynamic Boost and NVIDIA CURRENT/MAX retained; PLGPU {(pl?.ToString() ?? "preserved")}; HPCM {hpcm}.");
         if (useNvp) Log(await Task.Run(() => _currentGpu.Apply(nvp)));
     }
     private async Task ReadGpu()
@@ -255,7 +258,7 @@ internal sealed class MainForm : Form { public bool OperationBusy => _busy;
         await ScanPcf();
         try
         {
-            var result = await Task.Run(() => { using var pcf = new PcfPowerController(); var v = pcf.GetPowerValues(); return $"PCF TPP {FormatWatts(v.ACTargetTPPLimitInMilliwatts)}; GPU max {FormatWatts(v.ACMaxGPULimitInMilliwatts)}"; });
+            var result = await Task.Run(() => { using var pcf = VictusPowerUnlockGui.PcfControllerDiscovery.Open(); var v = pcf.GetPowerValues(); return $"PCF TPP {FormatWatts(v.ACTargetTPPLimitInMilliwatts)}; GPU max {FormatWatts(v.ACMaxGPULimitInMilliwatts)}"; });
             Log(result);
         }
         catch (Exception ex) { Log("PCF read unavailable: " + SafeError.Describe(ex)); }
@@ -270,7 +273,8 @@ internal sealed class MainForm : Form { public bool OperationBusy => _busy;
         for (int i = 0; i < 6; i++) _cpu[i].Value = defaults[i];
         try { await ApplyCpu(); } catch (Exception ex) { failures.Add("CPU restore: " + SafeError.Describe(ex)); }
         _gpu.Value = 100; _plgpu.Value = 35; _hpPl.Checked = true; _hpcm.Checked = false; _useNvp.Checked = false;
-        try { await ApplyGpu(); } catch (Exception ex) { failures.Add("HP/PCF restore: " + SafeError.Describe(ex)); }
+        try { Log(await Task.Run(() => PlatformPowerTransaction.RestoreHpDefaults(() => ApplyHpState(35, false)))); }
+        catch (Exception ex) { failures.Add("HP/PCF restore: " + SafeError.Describe(ex)); }
         if (failures.Count > 0) throw new InvalidOperationException("Restore incomplete:\n" + string.Join("\n", failures));
         Log("Tested runtime defaults restored. Advanced NvAPI tuning must be restored in Advanced GPU.");
     }
@@ -319,8 +323,9 @@ internal sealed class MainForm : Form { public bool OperationBusy => _busy;
         using var hp = new HpWmiBios();
         if (!hp.IsAvailable)
             throw new InvalidOperationException("HP WMI BIOS interface is unavailable: " + hp.Status);
+        byte gpsTarget = HpPlatform.GetGpuGpsTarget(hp);
         RequireHpCommand(hp, 0x1A, [0xFF, hpcmEnabled ? (byte)0x01 : (byte)0x00]);
-        RequireHpCommand(hp, 0x22, [0x01, 0x01, 0x01, 0x00]);
+        HpPlatform.ConfigureGpuMaximum(hp, gpsTarget);
         if (plGpuWatts.HasValue)
             RequireHpCommand(hp, 0x29, [0xFF, 0xFF, 0xFF, checked((byte)plGpuWatts.Value)]);
     }

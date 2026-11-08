@@ -15,10 +15,10 @@ internal static class TppCalibrationTests
         if(CpuLoadReader.Calculate(0,0,0,90,100,0)!=10||CpuLoadReader.Calculate(0,0,0,0,100,0)!=100||CpuLoadReader.Calculate(0,0,0,100,100,0)!=0)throw new Exception("CPU idle accounting failed.");
         bool badCpu=false;try{CpuLoadReader.Calculate(0,0,0,0,0,0);}catch(InvalidOperationException){badCpu=true;}if(!badCpu)throw new Exception("Missing CPU sample accepted as idle.");
         var fake=new Fake();var result=TppCalibration.Run(fake,"test",100,180,()=>{},CancellationToken.None);
-        if(result.Accepted.Min()!=110||result.Accepted.Max()!=170||result.Accepted.Length!=61||fake.Value!=125000||fake.Restores!=1)throw new Exception("Calibration clamping/restoration failed.");
+        if(result.Accepted.Min()!=110||result.Accepted.Max()!=170||result.Accepted.Length!=61||fake.Value!=125000||fake.Restores!=82)throw new Exception("Calibration clamping/restoration failed.");
         fake=new Fake();var cancel=new CancellationTokenSource();bool cancelled=false;
         try{TppCalibration.Run(fake,"test",100,180,()=>{},cancel.Token,_=>cancel.Cancel());}catch(OperationCanceledException){cancelled=true;}
-        if(!cancelled||fake.Value!=125000||fake.Restores!=1)throw new Exception("Cancelled calibration did not restore original TPP.");
+        if(!cancelled||fake.Value!=125000||fake.Restores!=2)throw new Exception("Cancelled calibration did not restore original TPP.");
         fake=new Fake{RestoreFails=true};bool failed=false;
         try{TppCalibration.Run(fake,"test",100,110,()=>{},CancellationToken.None);}catch(InvalidOperationException){failed=true;}
         if(!failed)throw new Exception("Restoration failure was reported as success.");
@@ -27,5 +27,6 @@ internal static class TppCalibrationTests
         if(!failed||fake.Value!=125000)throw new Exception("Load interruption did not restore TPP.");
         fake=new Fake();result=TppCalibration.Run(fake,"test",110,130,()=>{},CancellationToken.None);
         if(!result.Describe().Contains("Upper boundary not found"))throw new Exception("Test interval endpoint mislabeled as hardware maximum.");
+        if(!TppCalibration.Valid(result,"test")||TppCalibration.Valid(result with{Protocol=0},"test")||TppCalibration.Valid(result,"test","changed")||TppCalibration.Valid(result with{Accepted=result.Accepted.Concat(new[]{110}).ToArray()},"test")||TppCalibration.Valid(result with{Rejected=new[]{109}},"test"))throw new Exception("Stale or incomplete TPP calibration cache accepted.");
     }
 }

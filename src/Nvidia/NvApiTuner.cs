@@ -132,17 +132,13 @@ namespace NvpwrControlBlackwell
                 RollbackState rb = new RollbackState();
                 try
                 {
-                    bool needP = request.SetCore || request.SetMemory || (request.SetNvvdd && rb.NvvddPresent);
-                    bool needVfVolt = request.SetNvvdd && !rb.NvvddPresent;
+                    bool needP = request.SetCore || request.SetMemory || request.SetNvvdd;
                     bool needX = request.SetXbar || request.SetMsvdd;
                     bool needR = request.SetRatio;
                     CaptureRollback(s, rb, needP, needX, needR);
 
-                    if (needVfVolt)
-                    {
-                        if (!ApplyVoltageTargetWithSession(s, request.NvvddMv, out error))
-                            throw new InvalidOperationException("V/F voltage application failed: " + error);
-                    }
+                    if (request.SetNvvdd && !rb.NvvddPresent)
+                        throw new InvalidOperationException("The driver does not expose an NVVDD voltage offset. Use the separate V/F curve target control.");
 
                     if (needP)
                     {
@@ -259,13 +255,14 @@ namespace NvpwrControlBlackwell
                 if (!ApplyVoltageTargetWithSession(s, targetMv, out error))
                     return OperationResult.Fail(error);
                 ProbeWithSession(s, post, false);
-                return OperationResult.Ok(targetMv <= 940 ? "Voltage curve restored to stock 940 mV limits." : "Core voltage target " + targetMv.ToString() + " mV applied successfully.");
+                return OperationResult.Ok(targetMv == 0 ? "V/F curve offsets reset." : "V/F curve frequency cap applied at the " + targetMv.ToString() + " mV curve point and verified. Actual voltage remains driver-controlled.");
             }
         }
 
         public static bool ApplyVoltageTargetWithSession(NvApiSession s, int targetMv, out string error)
         {
             error = "";
+            if (targetMv < 0 || targetMv > 2000) { error = "Invalid voltage target."; return false; }
             NvApiSession.GpuBufferDelegate infoFn = s.GetGpuBuffer(IdVfInfo);
             NvApiSession.GpuBufferDelegate stFn = s.GetGpuBuffer(IdVfStatus);
             NvApiSession.GpuBufferDelegate getFn = s.GetGpuBuffer(IdVfControlGet);
@@ -299,6 +296,8 @@ namespace NvpwrControlBlackwell
             rc = CallBuffer(getFn, s.Gpu, ctrlBuf);
             if (rc != 0) { error = "ClkVfPointsGetControl failed rc=" + rc.ToString(); return false; }
 
+            byte[] originalControl = (byte[])ctrlBuf.Clone();
+
             // 4. Parse points
             int count = 128;
             int[] pointType = new int[count];
@@ -309,48 +308,59 @@ namespace NvpwrControlBlackwell
             for (int p = 0; p < count; p++)
             {
                 int stOff = StatusHeaderSize + p * StatusEntrySize;
-                int ctrlOff = ControlHeaderSize + p * ControlEntrySize;
+                int ctrlOff = p == 0 ? -1 : CurveControlOffset(p);
                 if (stOff + 12 <= stBuf.Length)
                 {
                     pointType[p] = I32(stBuf, stOff);
                     pointFreqKhz[p] = I32(stBuf, stOff + 4);
                     pointVoltUv[p] = I32(stBuf, stOff + 8);
                 }
-                if (ctrlOff + 24 <= ctrlBuf.Length)
+                if (ctrlOff >= 0 && ctrlOff + 24 <= ctrlBuf.Length)
                 {
                     pointOffsetKhz[p] = I32(ctrlBuf, ctrlOff + 20);
                 }
             }
 
-            if (targetMv <= 940)
+            if (targetMv == 0)
             {
-                // Reset caps on higher voltage points so curve returns to stock behavior
+                // Restore clears the active core curve frequency offsets.
                 for (int p = 1; p < count; p++)
                 {
-                    if (pointType[p] == 0 && pointVoltUv[p] > 940000)
+                    if (IsActiveVfPoint(vfMask, p) && pointType[p] == 0 && pointVoltUv[p] > 0)
                     {
-                        int ctrlOff = ControlHeaderSize + p * ControlEntrySize;
+                        int ctrlOff = p == 0 ? -1 : CurveControlOffset(p);
                         int currentOffset = I32(ctrlBuf, ctrlOff + 20);
-                        if (currentOffset < 0) PutI32(ctrlBuf, ctrlOff + 20, 0);
+                        PutI32(ctrlBuf, ctrlOff + 20, 0);
                     }
                 }
             }
             else
             {
                 int targetUv = targetMv * 1000;
+                int maximumUv = 0;
+                for (int p = 1; p < count; p++)
+                {
+                    if (IsActiveVfPoint(vfMask, p) && pointType[p] == 0)
+                        maximumUv = Math.Max(maximumUv, pointVoltUv[p]);
+                }
+                if (targetUv > maximumUv)
+                {
+                    error = "Voltage target exceeds the driver-reported V/F curve.";
+                    return false;
+                }
                 int targetIdx = -1;
                 for (int p = 1; p < count; p++)
                 {
-                    if (pointType[p] == 0 && pointVoltUv[p] >= targetUv)
+                    if (IsActiveVfPoint(vfMask, p) && pointType[p] == 0 && pointVoltUv[p] > 0 && pointVoltUv[p] <= targetUv &&
+                        (targetIdx < 0 || pointVoltUv[p] > pointVoltUv[targetIdx]))
                     {
                         targetIdx = p;
-                        break;
                     }
                 }
 
                 if (targetIdx < 0)
                 {
-                    error = "Target voltage " + targetMv.ToString() + " mV exceeds maximum curve point.";
+                    error = "Target voltage " + targetMv.ToString() + " mV has no supported curve point at or below it.";
                     return false;
                 }
 
@@ -358,50 +368,102 @@ namespace NvpwrControlBlackwell
                 // The peak frequency at target voltage is: target point's base frequency + current offset
                 int targetEffectiveKhz = pointFreqKhz[targetIdx];
 
-                // Cap ONLY points ABOVE target voltage so the GPU does not exceed target voltage
-                for (int p = targetIdx + 1; p < count; p++)
+                // Flatten higher-voltage frequencies without raising existing curve points.
+                for (int p = 1; p < count; p++)
                 {
-                    if (pointType[p] == 0 && pointVoltUv[p] > 0)
+                    if (IsActiveVfPoint(vfMask, p) && pointType[p] == 0 && pointVoltUv[p] > pointVoltUv[targetIdx])
                     {
                         int baseFreq = pointFreqKhz[p] - pointOffsetKhz[p];
-                        int offsetNeeded = targetEffectiveKhz - baseFreq;
-                        int ctrlOff = ControlHeaderSize + p * ControlEntrySize;
+                        int offsetNeeded = Math.Min(targetEffectiveKhz, pointFreqKhz[p]) - baseFreq;
+                        int ctrlOff = p == 0 ? -1 : CurveControlOffset(p);
                         PutI32(ctrlBuf, ctrlOff + 20, offsetNeeded);
                     }
                 }
 
-                // Clean up any negative offsets that may have been previously placed on points <= targetIdx
-                for (int p = 1; p <= targetIdx; p++)
-                {
-                    if (pointType[p] == 0 && pointVoltUv[p] > 0)
-                    {
-                        int ctrlOff = ControlHeaderSize + p * ControlEntrySize;
-                        int curOff = I32(ctrlBuf, ctrlOff + 20);
-                        if (curOff < 0)
-                        {
-                            PutI32(ctrlBuf, ctrlOff + 20, 0);
-                        }
-                    }
-                }
+
             }
 
             // 5. ClkVfPointsSetControl
             rc = CallBuffer(setFn, s.Gpu, ctrlBuf);
             if (rc != 0)
             {
+                int rollbackRc = CallBuffer(setFn, s.Gpu, originalControl);
                 if (rc == -137)
                     error = "NVAPI_INVALID_USER_PRIVILEGE: Administrator elevation required to program V/F curve.";
                 else
                     error = "ClkVfPointsSetControl failed rc=" + rc.ToString();
+                error += ". Previous curve restore rc=" + rollbackRc + ".";
                 return false;
             }
 
-            // Always reset any NVML locked clocks so GPU downclocks normally at idle
-            string nvmlErr;
-            NvmlBridge.ResetLockedClocks(out nvmlErr);
+            byte[] verified = new byte[VfControlSize];
+            PutU32(verified, 0, VfControlVersion);
+            Buffer.BlockCopy(vfMask, 0, verified, 4, 32);
+            int verifyRc = CallBuffer(getFn, s.Gpu, verified);
+            var differences = new List<string>();
+            for (int p = 1; p < count && verifyRc == 0; p++)
+            {
+                if (!IsActiveVfPoint(vfMask, p)) continue;
+                int offset = CurveControlOffset(p) + 20;
+                int requested = I32(ctrlBuf, offset);
+                int actual = I32(verified, offset);
+                if (requested != actual)
+                    differences.Add("point " + p + " (" + pointVoltUv[p] +
+                        " uV), requested " + requested + " kHz, returned " + actual + " kHz");
+            }
+            if (verifyRc != 0 || differences.Count > 0)
+            {
+                int rollbackRc = CallBuffer(setFn, s.Gpu, originalControl);
+                byte[] restored = new byte[VfControlSize];
+                PutU32(restored, 0, VfControlVersion);
+                Buffer.BlockCopy(vfMask, 0, restored, 4, 32);
+                int restoreReadRc = CallBuffer(getFn, s.Gpu, restored);
+                bool restoreMatches = rollbackRc == 0 && restoreReadRc == 0;
+                for (int p = 1; p < count && restoreMatches; p++)
+                {
+                    if (!IsActiveVfPoint(vfMask, p)) continue;
+                    int offset = CurveControlOffset(p) + 20;
+                    restoreMatches = I32(restored, offset) == I32(originalControl, offset);
+                }
+                string detail = differences.Count > 0 ?
+                    string.Join("; ", differences.GetRange(0, Math.Min(4, differences.Count))) :
+                    "GET failed rc=" + verifyRc;
+                error = "The driver did not retain the requested V/F curve. " + detail +
+                    ". Previous curve " + (restoreMatches ? "verified restored." :
+                    "restoration could not be verified (SET rc=" + rollbackRc +
+                    ", GET rc=" + restoreReadRc + ").");
+                AppLog.Write(error + " Total mismatches=" + differences.Count);
+                return false;
+            }
 
             AppLog.Write("ApplyVoltageTarget succeeded for target " + targetMv.ToString() + " mV");
             return true;
+        }
+
+        // Control entry zero belongs to status anchor one.
+        internal static int CurveControlOffset(int anchor)
+        {
+            if (anchor < 1 || anchor > 255)
+                throw new ArgumentOutOfRangeException(nameof(anchor));
+            return ControlHeaderSize + (anchor - 1) * ControlEntrySize;
+        }
+
+        internal static void TestCurveControlMapping()
+        {
+            if (CurveControlOffset(1) != 0x44 ||
+                CurveControlOffset(127) != 0x44 + 126 * 36)
+                throw new InvalidOperationException("V/F control anchor mapping regressed.");
+            byte[] control = new byte[VfControlSize];
+            PutI32(control, CurveControlOffset(127) + 20, -698000);
+            if (I32(control, CurveControlOffset(127) + 20) != -698000 ||
+                I32(control, ControlHeaderSize + 127 * ControlEntrySize + 20) != 0)
+                throw new InvalidOperationException("V/F endpoint wrote the next control slot.");
+        }
+
+        private static bool IsActiveVfPoint(byte[] mask, int point)
+        {
+            return point >= 0 && point < mask.Length * 8 &&
+                (mask[point / 8] & (1 << (point % 8))) != 0;
         }
 
         private static void ProbeWithSession(NvApiSession s, TunerState state, bool allowMsvdd)
@@ -461,13 +523,7 @@ namespace NvpwrControlBlackwell
 
             ProbeExtraReadOnly(s, state);
 
-            if (!state.NvvddMv.Supported && (state.VfInfoAvailable || state.VfControlReadable))
-            {
-                state.NvvddMv.Supported = true;
-                state.NvvddMv.Min = 900;
-                state.NvvddMv.Max = 1150;
-                state.NvvddMv.Current = 1000;
-            }
+
         }
 
         private static bool ReadPstates(NvApiSession s, out byte[] b, out PstatesFields f, out string error)

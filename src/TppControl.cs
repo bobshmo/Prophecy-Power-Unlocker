@@ -8,7 +8,7 @@ internal static class TppControl{
  internal static PlatformPowerScan Scan(PcfPowerFields field){
   if(field!=PcfPowerFields.ACTargetTPPLimit&&field!=PcfPowerFields.ACMaxGPULimit)throw new ArgumentException("Unsupported platform field.");
   string machine="";using(var q=new ManagementObjectSearcher("SELECT Manufacturer,Model FROM Win32_ComputerSystem"))foreach(ManagementObject x in q.Get())machine=Convert.ToString(x["Manufacturer"])+" "+Convert.ToString(x["Model"]);
-  string gpu=SystemProbe.GetGpuName(),pci=SystemProbe.FindNvidiaDeviceInstanceId(gpu);using var pcf=new PcfPowerController();var v=pcf.GetPowerValues();uint current=field==PcfPowerFields.ACTargetTPPLimit?v.ACTargetTPPLimitInMilliwatts:v.ACMaxGPULimitInMilliwatts;int? stock=null,max=null;
+  string gpu=SystemProbe.GetGpuName(),pci=SystemProbe.FindNvidiaDeviceInstanceId(gpu);using var pcf=VictusPowerUnlockGui.PcfControllerDiscovery.Open();var v=pcf.GetPowerValues();uint current=field==PcfPowerFields.ACTargetTPPLimit?v.ACTargetTPPLimitInMilliwatts:v.ACMaxGPULimitInMilliwatts;int? stock=null,max=null;
   using(var q=new ManagementObjectSearcher("SELECT SMBIOSBIOSVersion FROM Win32_BIOS"))foreach(ManagementObject x in q.Get())machine+=" | BIOS "+Convert.ToString(x["SMBIOSBIOSVersion"]);
   machine+=" | NVIDIA "+SystemProbe.GetDriverVersion()+" | PCF "+pcf.ControllerIndex+"/"+pcf.LayoutVersion;
   machine+=" | VBIOS "+SystemProbe.GetVbios();
@@ -20,5 +20,5 @@ internal static class TppControl{
   }}catch(ManagementException){}
   return new(machine+" | "+gpu+" | "+pci,current,stock,max,field);
  }
- internal static string Apply(PlatformPowerScan expected,int watts){var fresh=Scan(expected.Field);if(fresh.Identity!=expected.Identity||!fresh.Adjustable)throw new InvalidOperationException("Device/range unavailable. Scan again.");if(watts<fresh.StockW||watts>fresh.MaximumW)throw new ArgumentOutOfRangeException(nameof(watts));using var pcf=new PcfPowerController();pcf.SetPowerField(expected.Field,(uint)watts*1000);var v=pcf.GetPowerValues();uint actual=expected.Field==PcfPowerFields.ACTargetTPPLimit?v.ACTargetTPPLimitInMilliwatts:v.ACMaxGPULimitInMilliwatts;if(actual!=(uint)watts*1000)throw new InvalidOperationException("PCF readback mismatch.");return expected.Field+": "+watts+" W verified.";}
+ internal static string Apply(PlatformPowerScan expected,int watts){var fresh=Scan(expected.Field);if(fresh.Identity!=expected.Identity||!fresh.Adjustable)throw new InvalidOperationException("Device/range unavailable. Scan again.");if(watts<fresh.StockW||watts>fresh.MaximumW)throw new ArgumentOutOfRangeException(nameof(watts));return PlatformPowerTransaction.ApplyField(expected.Field,(uint)watts*1000);}
 }

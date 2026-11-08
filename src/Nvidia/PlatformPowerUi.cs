@@ -13,13 +13,13 @@ internal sealed partial class MainForm{
   if(field==PcfPowerFields.ACTargetTPPLimit)AddTppCalibrationControls(root);else AddPcfGpuTools(root);
  }}
  private void AddTppCalibrationControls(FlowLayoutPanel root){
-  var card=Card(190,true);card.Dock=DockStyle.None;
+  var card=Card(230,true);card.Dock=DockStyle.None;
   var label=new Label{Text="ACTargetTPPLimit accepted-target calibration (W)",AutoSize=true,Location=new Point(U(16),U(14))};
   var low=new NumericUpDown{Minimum=1,Maximum=1000,Value=100,Location=new Point(U(16),U(50)),Width=U(90)};
   var high=new NumericUpDown{Minimum=1,Maximum=1000,Value=180,Location=new Point(U(125),U(50)),Width=U(90)};
   var start=ButtonBase("calibrateTpp",U(180));start.Text="Calibrate TPP range";start.Location=new Point(U(235),U(44));
   var cancel=ButtonBase("cancelTpp",U(110));cancel.Text="Cancel";cancel.Location=new Point(U(430),U(44));cancel.Enabled=false;
-  var report=new Label{Text="Tests every whole-watt target inside the chosen interval. AC power and an idle CPU/GPU are required. Restores the original PCF snapshot. This does not establish electrical/thermal safety or factory stock.",Location=new Point(U(16),U(100)),Size=new Size(U(900),U(75))};
+  var report=new Label{Text="Tests every whole-watt target inside the chosen interval. AC power and an idle CPU/GPU are required. PCF, Dynamic Boost and NVIDIA CURRENT/MAX are restored after every attempt. Use Verify under load afterward; 180 W is a search endpoint, not a detected maximum.",Location=new Point(U(16),U(100)),Size=new Size(U(900),U(115))};
   card.Resize+=(_,_)=>report.Width=Math.Max(U(220),card.ClientSize.Width-U(32));card.Controls.AddRange(new Control[]{label,low,high,start,cancel,report});_responsiveWide.Add(card);root.Controls.Add(card);
   cancel.Click+=(_,_)=>_tppCancel?.Cancel();
   start.Click+=async(_,_)=>{
@@ -27,7 +27,7 @@ internal sealed partial class MainForm{
    if(!_platformScans.TryGetValue(PcfPowerFields.ACTargetTPPLimit,out var device)){await ScanPlatformPowerAsync();if(!_platformScans.TryGetValue(PcfPowerFields.ACTargetTPPLimit,out device))return;}
    int lower=(int)low.Value,upper=(int)high.Value;
    if(upper<lower||upper-lower>300){report.Text="Choose a valid interval no wider than 300 W.";return;}
-   if(MessageBox.Show(this,$"Temporarily test TPP targets {lower}–{upper} W? Close games and other power-control apps first. The original PCF snapshot will be restored. Readback acceptance is not a safe operating-power guarantee.","Confirm TPP calibration",MessageBoxButtons.YesNo,MessageBoxIcon.Question,MessageBoxDefaultButton.Button2)!=DialogResult.Yes)return;
+   if(MessageBox.Show(this,$"Temporarily test TPP targets {lower}–{upper} W? Close games and other power-control apps first. Each attempt restores PCF and Dynamic Boost; checks MAX without replaying public CURRENT. Readback acceptance does not verify loaded power.","Confirm TPP calibration",MessageBoxButtons.YesNo,MessageBoxIcon.Question,MessageBoxDefaultButton.Button2)!=DialogResult.Yes)return;
    _tppCalibration=null;_tppCancel=new CancellationTokenSource();_busy=true;UpdateWriteButtons();start.Enabled=false;cancel.Enabled=true;low.Enabled=false;high.Enabled=false;
    try{var result=await Task.Run(()=>TppCalibration.Calibrate(device,lower,upper,_tppCancel.Token,w=>BeginInvoke(new Action(()=>report.Text=$"Testing {w} W; original snapshot will be restored."))));_tppCalibration=result;report.Text=result.Describe();}
    catch(OperationCanceledException){report.Text="Calibration cancelled; restoration completed.";}
@@ -35,5 +35,40 @@ internal sealed partial class MainForm{
    finally{_tppCancel.Dispose();_tppCancel=null;_busy=false;UpdateWriteButtons();start.Enabled=true;cancel.Enabled=false;low.Enabled=true;high.Enabled=true;await ScanPlatformPowerAsync();}
   };
  }
- private async Task ScanPlatformPowerAsync(){if(_busy)return;_busy=true;UpdateWriteButtons();try{foreach(var entry in _platformControls){var c=entry.Value;c.Input.Enabled=false;c.Apply.Enabled=false;_platformScans.Remove(entry.Key);try{var result=await Task.Run(()=>TppControl.Scan(entry.Key));c.Input.Minimum=0;c.Input.Maximum=Math.Max(1000,result.CurrentMw/1000m);c.Input.Value=result.CurrentMw/1000m;_platformScans[entry.Key]=result;if(entry.Key==PcfPowerFields.ACTargetTPPLimit){if(_tppCalibration?.Identity!=result.Identity)_tppCalibration=null;_tppCalibration??=TppCalibration.Load(result);}c.Status.Text="Current "+(result.CurrentMw/1000m)+" W. "+(result.Adjustable?"Firmware stock "+result.StockW+" W → maximum "+result.MaximumW+" W.":"Stock/max bounds not advertised; adjustment unavailable.");if(result.Adjustable){c.Input.Minimum=0;c.Input.Maximum=result.MaximumW!.Value;c.Input.Minimum=result.StockW!.Value;c.Input.Value=Math.Clamp(result.CurrentMw/1000m,c.Input.Minimum,c.Input.Maximum);c.Input.Enabled=true;c.Apply.Enabled=true;}}catch(Exception ex){c.Status.Text="Scan unavailable: "+SafeError.Describe(ex);}}if(_tppCalibration is {Accepted.Length: >0} tested&&_platformScans.TryGetValue(PcfPowerFields.ACTargetTPPLimit,out var current)&&current.Identity==tested.Identity){var c=_platformControls[PcfPowerFields.ACTargetTPPLimit];c.Input.Minimum=0;c.Input.Maximum=tested.Accepted.Max();c.Input.Minimum=tested.Accepted.Min();c.Input.Value=Math.Clamp(current.CurrentMw/1000m,c.Input.Minimum,c.Input.Maximum);c.Input.Enabled=true;c.Apply.Enabled=tested.Accepted.Contains((int)c.Input.Value);c.Status.Text=tested.Describe();}RefreshPcfGpuTest();}finally{_busy=false;UpdateWriteButtons();}}
+ private async Task ScanPlatformPowerAsync()
+ {
+  if(_busy)return;
+  _busy=true;UpdateWriteButtons();
+  try
+  {
+   foreach(var entry in _platformControls)
+   {
+    var c=entry.Value;c.Input.Enabled=false;c.Apply.Enabled=false;_platformScans.Remove(entry.Key);
+    if(entry.Key==PcfPowerFields.ACTargetTPPLimit)_tppCalibration=null;
+    try
+    {
+     var result=await Task.Run(()=>TppControl.Scan(entry.Key));
+     c.Input.Minimum=0;c.Input.Maximum=Math.Max(1000,result.CurrentMw/1000m);c.Input.Value=result.CurrentMw/1000m;
+     _platformScans[entry.Key]=result;
+     if(entry.Key==PcfPowerFields.ACTargetTPPLimit)_tppCalibration=await Task.Run(()=>TppCalibration.Load(result));
+     c.Status.Text="Current "+(result.CurrentMw/1000m)+" W. "+(result.Adjustable
+      ?"Firmware stock "+result.StockW+" W → maximum "+result.MaximumW+" W."
+      :"The controller exposes current power fields without stock/max bounds. Use the acceptance test below to enable matched targets; verify actual draw under load.");
+     if(result.Adjustable)
+     {
+      c.Input.Minimum=0;c.Input.Maximum=result.MaximumW!.Value;c.Input.Minimum=result.StockW!.Value;
+      c.Input.Value=Math.Clamp(Math.Round(result.CurrentMw/1000m),c.Input.Minimum,c.Input.Maximum);c.Input.Enabled=true;c.Apply.Enabled=true;
+     }
+    }
+    catch(Exception ex){c.Status.Text="Controller scan unavailable: "+SafeError.Describe(ex);}
+   }
+   if(_tppCalibration is {Accepted.Length: >0} tested&&_platformScans.TryGetValue(PcfPowerFields.ACTargetTPPLimit,out var current)&&current.Identity==tested.Identity)
+   {
+    var c=_platformControls[PcfPowerFields.ACTargetTPPLimit];c.Input.Minimum=0;c.Input.Maximum=tested.Accepted.Max();c.Input.Minimum=tested.Accepted.Min();
+    c.Input.Value=Math.Clamp(Math.Round(current.CurrentMw/1000m),c.Input.Minimum,c.Input.Maximum);c.Input.Enabled=true;c.Apply.Enabled=tested.Accepted.Contains((int)c.Input.Value);c.Status.Text=tested.Describe();
+   }
+   RefreshPcfGpuTest();
+  }
+  finally{_busy=false;UpdateWriteButtons();}
+ }
 }

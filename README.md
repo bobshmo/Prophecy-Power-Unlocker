@@ -2,7 +2,7 @@
 
 > **Experimental hardware tuning — use at your own risk.** Changing power, voltage, clocks, platform controls or firmware can cause instability, data loss or permanent hardware damage. Accepted settings do not prove safe or supported operation, and an unlock or performance gain is not guaranteed. Provided without warranty to the extent permitted by law. Read the [legal and hardware-risk notices](LEGAL.md) and [third-party license notices](THIRD-PARTY-NOTICES.md) before use. This is an independent project, not endorsed by NVIDIA or HP.
 
-**ACTargetTPPLimit** and **ACMaxGPULimit** are on Compatibility. Version 1.2.5 restores the PCF Max baseline toggle and adds **Test all PCF GPU values** alongside TPP calibration. If firmware bounds are unavailable, the tester enables matching positive targets and reports its profile test ceiling separately from a detected hardware maximum. See [PCF GPU controls and tester](docs/PCF-GPU-TESTER.md).
+Version 1.2.9 includes corrected V/F curve anchor mapping and readback checks, NVAPI error-reporting fixes, and updated HP/PCF recovery and calibration controls. See the [release notes](https://github.com/bobshmo/Prophecy-Power-Unlocker/releases/tag/v1.2.9).
 
 ## Resolving an unknown VBIOS
 
@@ -10,7 +10,7 @@ This local package includes the Blackwell `nvflashb.exe` release from https://gi
 
 Windows control panel combining NVIDIA laptop power control and telemetry, HP Victus platform controls, and optional mVolt profile import.
 
-[Download Prophecy 1.2.5 for Windows x64](https://github.com/bobshmo/Prophecy-Power-Unlocker/releases/download/v1.2.5/Prophecy-Power-Unlocker-1.2.5-win-x64.zip) · [Release notes and checksums](https://github.com/bobshmo/Prophecy-Power-Unlocker/releases/tag/v1.2.5)
+[Download Prophecy 1.2.9 for Windows x64](https://github.com/bobshmo/Prophecy-Power-Unlocker/releases/download/v1.2.9/Prophecy-Power-Unlocker-1.2.9-win-x64.zip) · [Release notes and checksums](https://github.com/bobshmo/Prophecy-Power-Unlocker/releases/tag/v1.2.9)
 
 ## Features
 

@@ -1,0 +1,64 @@
+using NvAPIWrapper.GPU;
+namespace VictusPowerUnlockGui;
+internal static class PlatformPowerTransactionTests
+{
+ private sealed class Fake:IPlatformPowerSession{
+  public PcfPowerValues Limits=new(180000,90000,80000,140000);public bool Boost=true;public uint Current=140000,Max=140000;
+  public bool CorruptNext,FailCurrent,LowerCurrentNext,FlipBoostOnCurrent,PrepareFailsNext,ResetFailsNext,MinimumOverride,DefaultOverride,Trusted=true,Disposed;public PcfPowerValues Factory=new(125000,90000,80000,100000);public readonly List<string> Events=new();public readonly List<PcfPowerValues> LimitWrites=new();
+  public bool Requested=true,MovingCeiling;public PcfPowerValues? PreparedLimits;
+  public bool CurrentIsRequested=>Requested;
+  public bool CanRestoreCurrent=>Trusted;public PcfPowerValues ReadLimits()=>Limits;public bool ReadBoost()=>Boost;public(uint Current,uint Max)ReadGpu(){if(MovingCeiling)Current=Current==98680?99360u:98680u;return(Current,Max);}
+  public void WriteLimits(PcfPowerValues v){Events.Add("PCF");LimitWrites.Add(v);if(v.ACMinGPULimitInMilliwatts!=Limits.ACMinGPULimitInMilliwatts)MinimumOverride=true;if(v.ACDefaultGPULimitInMilliwatts!=Limits.ACDefaultGPULimitInMilliwatts)DefaultOverride=true;Limits=v;Current=Math.Min(Current,v.ACMaxGPULimitInMilliwatts);if(LowerCurrentNext){LowerCurrentNext=false;Current=70000;}if(CorruptNext){CorruptNext=false;Limits=v.With(PcfPowerFields.ACMaxGPULimit,70000);Current=70000;Boost=false;}}
+  public void ResetOverrides(){Events.Add("RELEASE");Limits=Factory;MinimumOverride=DefaultOverride=false;Current=Math.Min(Current,Factory.ACMaxGPULimitInMilliwatts);if(ResetFailsNext){ResetFailsNext=false;throw new InvalidOperationException("Release failed after changing PCF state");}}
+  public void WriteBoost(bool v){Events.Add("BOOST");Boost=v;}public void WriteCurrent(uint v){Events.Add("CURRENT");if(FailCurrent)throw new InvalidOperationException("CURRENT unavailable");Current=v;if(FlipBoostOnCurrent){FlipBoostOnCurrent=false;Boost=false;}}
+  public IDisposable PrepareHp(){Events.Add("HP");if(PrepareFailsNext){PrepareFailsNext=false;Current=70000;Limits=new(125000,70000,70000,70000);throw new InvalidOperationException("HP prep failed after a policy change");}if(PreparedLimits!=null){Limits=PreparedLimits;Current=Math.Min(Current,Limits.ACMaxGPULimitInMilliwatts);}return new Empty();}public void Dispose(){Disposed=true;}private sealed class Empty:IDisposable{public void Dispose(){}}
+ }
+ internal static void Run(){
+  var ceilingOnly=new Fake{Requested=false,MovingCeiling=true,Trusted=false};
+  var observation=PlatformPowerTransaction.Capture(ceilingOnly);
+  PlatformPowerTransaction.Apply(ceilingOnly,PcfPowerFields.ACMaxGPULimit,115000,false);
+  PlatformPowerTransaction.Restore(ceilingOnly,observation,true);
+  if(ceilingOnly.Events.Contains("CURRENT")||!PlatformPowerTransaction.Same(ceilingOnly.Limits,observation.Limits))throw new Exception("PCF replayed a moving public ceiling through E633.");
+  var contextA=observation.Context;var contextB=(observation with{CurrentMw=95470}).Context;
+  if(contextA!=contextB)throw new Exception("Observed ceiling movement invalidated PCF context.");
+  if(contextA==(observation with{MaxMw=115000}).Context)throw new Exception("Real MAX change did not invalidate PCF context.");
+  var recovery=new Fake{Limits=new(125000,90000,80000,125000),Current=100000,Requested=false};
+  bool lowBudget=false;try{PlatformPowerTransaction.Recover(recovery,140,null);}catch(InvalidOperationException){lowBudget=true;}
+  if(!lowBudget||recovery.Events.Count!=0)throw new Exception("Recovery sent a GPU target without sufficient shared TPP.");
+  PlatformPowerTransaction.Recover(recovery,140,180);
+  if(recovery.LimitWrites.Count!=2||recovery.LimitWrites[0].ACTargetTPPLimitInMilliwatts!=180000||recovery.LimitWrites[0].ACMaxGPULimitInMilliwatts!=125000||recovery.LimitWrites[1].ACMaxGPULimitInMilliwatts!=140000||recovery.Current!=140000||recovery.Events.Last()!="CURRENT")throw new Exception("Coordinated recovery did not establish TPP before GPU cap/CURRENT.");
+  var bootRecovery=new Fake{Limits=new(115000,80000,70000,90000),Current=90000,Requested=false,PreparedLimits=new(125000,90000,80000,100000)};
+  PlatformPowerTransaction.Recover(bootRecovery,140,180);
+  if(bootRecovery.Limits.ACTargetTPPLimitInMilliwatts!=180000||bootRecovery.Limits.ACMaxGPULimitInMilliwatts!=140000||bootRecovery.Limits.ACDefaultGPULimitInMilliwatts!=90000||bootRecovery.Limits.ACMinGPULimitInMilliwatts!=80000||bootRecovery.DefaultOverride||bootRecovery.MinimumOverride)
+   throw new Exception("Recovery replayed pre-Performance MIN/DEFAULT as overrides after HP changed its OEM policy.");
+  var bootToggle=new Fake{Limits=new(115000,80000,70000,90000),Current=90000,Requested=false,PreparedLimits=new(125000,90000,80000,100000)};
+  PlatformPowerTransaction.Apply(bootToggle,PcfPowerFields.ACMaxGPULimit,115000,true);
+  if(bootToggle.Limits.ACTargetTPPLimitInMilliwatts!=125000||bootToggle.Limits.ACMaxGPULimitInMilliwatts!=115000||bootToggle.Limits.ACDefaultGPULimitInMilliwatts!=90000||bootToggle.Limits.ACMinGPULimitInMilliwatts!=80000||bootToggle.DefaultOverride||bootToggle.MinimumOverride)
+   throw new Exception("HP unlock toggle replayed default-mode companions after preparing Performance.");
+  var raisedToggle=new Fake{Limits=new(180000,90000,80000,140000),Requested=false,PreparedLimits=new(125000,90000,80000,100000)};
+  PlatformPowerTransaction.Apply(raisedToggle,PcfPowerFields.ACMaxGPULimit,140000,true);
+  if(raisedToggle.Limits.ACTargetTPPLimitInMilliwatts!=180000||raisedToggle.Limits.ACMaxGPULimitInMilliwatts!=140000)
+   throw new Exception("HP unlock toggle lost previously raised TPP/GPU caps during mode preparation.");
+  var s=new Fake();var original=PlatformPowerTransaction.Capture(s);s.Limits=new(125000,70000,70000,70000);s.Current=70000;s.Boost=false;
+  PlatformPowerTransaction.Restore(s,original);if(!PlatformPowerTransaction.Same(s.Limits,original.Limits)||s.Current!=140000||!s.Boost||s.Events.IndexOf("PCF")>s.Events.IndexOf("CURRENT"))throw new Exception("Full power restoration/order failed.");
+  s=new Fake{Current=79910};original=PlatformPowerTransaction.Capture(s);s.Current=70000;PlatformPowerTransaction.Restore(s,original);if(s.Current!=79910)throw new Exception("Fractional CURRENT restoration lost precision.");
+  s=new Fake{CorruptNext=true};original=PlatformPowerTransaction.Capture(s);bool failed=false;try{PlatformPowerTransaction.Apply(s,PcfPowerFields.ACTargetTPPLimit,200000,true);}catch(InvalidOperationException){failed=true;}if(!failed||!PlatformPowerTransaction.Same(s.Limits,original.Limits)||s.Current!=original.CurrentMw||s.Boost!=original.Boost)throw new Exception("Failed apply left a clamped/modified policy active.");
+  s=new Fake();original=PlatformPowerTransaction.Capture(s);s.Max=115000;failed=false;try{PlatformPowerTransaction.Restore(s,original);}catch(InvalidOperationException){failed=true;}if(!failed||s.Events.Contains("CURRENT"))throw new Exception("Driver MAX change was ignored during restore.");
+  s=new Fake{FailCurrent=true};original=PlatformPowerTransaction.Capture(s);s.Current=70000;failed=false;try{PlatformPowerTransaction.Restore(s,original);}catch(InvalidOperationException){failed=true;}if(!failed)throw new Exception("CURRENT restoration failure was ignored.");
+  s=new Fake();original=PlatformPowerTransaction.Capture(s);PlatformPowerTransaction.Restore(s,original);if(s.Events.Contains("CURRENT"))throw new Exception("Unchanged CURRENT was unnecessarily rewritten during restoration.");
+  var low=PlatformPowerTransaction.ProbeValues(new(180000,90000,80000,140000),PcfPowerFields.ACMaxGPULimit,70000);if(low.ACMinGPULimitInMilliwatts>low.ACDefaultGPULimitInMilliwatts||low.ACDefaultGPULimitInMilliwatts>low.ACMaxGPULimitInMilliwatts)throw new Exception("Low MAX probe left incoherent companion fields.");
+  failed=false;try{PlatformPowerTransaction.ProbeValues(low,PcfPowerFields.ACMaxGPULimit,0);}catch(ArgumentOutOfRangeException){failed=true;}if(!failed)throw new Exception("Undocumented zero cap was sent.");
+  s=new Fake{LowerCurrentNext=true};original=PlatformPowerTransaction.Capture(s);PlatformPowerTransaction.Apply(s,PcfPowerFields.ACTargetTPPLimit,200000,false);if(s.Current!=original.CurrentMw||s.Limits.ACTargetTPPLimitInMilliwatts!=200000)throw new Exception("Successful PCF apply did not preserve CURRENT changed by the PCF write.");
+  s=new Fake{LowerCurrentNext=true,FlipBoostOnCurrent=true};original=PlatformPowerTransaction.Capture(s);failed=false;try{PlatformPowerTransaction.Apply(s,PcfPowerFields.ACTargetTPPLimit,200000,false);}catch(InvalidOperationException){failed=true;}if(!failed||!s.Boost||!PlatformPowerTransaction.Same(s.Limits,original.Limits)||s.Current!=original.CurrentMw)throw new Exception("Post-CURRENT Dynamic Boost failure was missed or not restored.");
+  s=new Fake{PrepareFailsNext=true};original=PlatformPowerTransaction.Capture(s);failed=false;try{PlatformPowerTransaction.Apply(s,PcfPowerFields.ACTargetTPPLimit,200000,true);}catch(InvalidOperationException){failed=true;}if(!failed||!PlatformPowerTransaction.Same(s.Limits,original.Limits)||s.Current!=original.CurrentMw)throw new Exception("HP preparation failure escaped restoration.");
+  s=new Fake{ResetFailsNext=true};failed=false;try{using var probe=new PcfTppProbe(s);}catch(InvalidOperationException){failed=true;}if(!failed||!s.Disposed||s.Limits.ACTargetTPPLimitInMilliwatts!=180000||s.Current!=140000)throw new Exception("Failed scanner cleanup leaked modified power state/resources.");
+  s=new Fake{Trusted=false};failed=false;try{PlatformPowerTransaction.Apply(s,PcfPowerFields.ACTargetTPPLimit,200000,true);}catch(InvalidOperationException){failed=true;}if(!failed||s.Events.Count!=0)throw new Exception("PCF writes began without a trusted CURRENT restoration path.");
+  s=new Fake();original=PlatformPowerTransaction.Capture(s);PlatformPowerTransaction.ApplyDesired(s,original,PlatformPowerTransaction.ProbeValues(original.Limits,PcfPowerFields.ACMaxGPULimit,70000),false,"test");if(s.Current!=140000||s.Limits.ACDefaultGPULimitInMilliwatts!=70000||s.Limits.ACMinGPULimitInMilliwatts!=70000||s.Limits.ACMaxGPULimitInMilliwatts!=70000)throw new Exception("Tested low GPU cap did not retain CURRENT and coherent companions.");
+  s=new Fake{Limits=new(180000,90000,80000,70000)};failed=false;try{PlatformPowerTransaction.Capture(s);}catch(InvalidOperationException){failed=true;}if(!failed)throw new Exception("Incoherent startup PCF state accepted for restoration.");
+  s=new Fake();original=PlatformPowerTransaction.Capture(s);PlatformPowerTransaction.PreserveAcrossHpSettings(s,()=>{s.Limits=new(125000,90000,80000,100000);s.Current=70000;s.Boost=false;});if(!PlatformPowerTransaction.Same(s.Limits,original.Limits)||s.Current!=140000||!s.Boost)throw new Exception("CPU / HP GPU mode controls discarded the existing TPP/PCF/CURRENT budget.");
+  s=new Fake();original=PlatformPowerTransaction.Capture(s);s.WriteLimits(PlatformPowerTransaction.ProbeValues(original.Limits,PcfPowerFields.ACMaxGPULimit,1000));PlatformPowerTransaction.Restore(s,original,true);if(s.MinimumOverride||s.DefaultOverride||!PlatformPowerTransaction.Same(s.Limits,original.Limits)||s.Current!=140000)throw new Exception("Temporary low MIN/DEFAULT overrides survived scanner cleanup.");
+  s=new Fake();var reset=PlatformPowerTransaction.ResetAfterHpDefaults(s,()=>{s.Events.Add("HP DEFAULT");s.Factory=new(125000,80000,70000,100000);});if(s.Limits.ACTargetTPPLimitInMilliwatts!=125000||s.Limits.ACMaxGPULimitInMilliwatts!=100000||s.MinimumOverride||s.DefaultOverride||s.Events.IndexOf("HP DEFAULT")>s.Events.IndexOf("RELEASE"))throw new Exception("Default restore retained the custom budget or released before applying HP default mode.");
+  var fields=new List<PcfPowerFields>();var values=new PcfPowerValues(180000,90000,80000,140000);HpPlatform.RestorePcfValues(values.With(PcfPowerFields.ACTargetTPPLimit,200000),()=>values,(field,value)=>{fields.Add(field);values=values.With(field,value);});if(!fields.SequenceEqual(new[]{PcfPowerFields.ACTargetTPPLimit}))throw new Exception("Changing TPP forced unchanged MIN/DEFAULT/MAX overrides.");
+  fields.Clear();var expectedLow=PlatformPowerTransaction.ProbeValues(values,PcfPowerFields.ACMaxGPULimit,70000);HpPlatform.RestorePcfValues(expectedLow,()=>values,(field,value)=>{fields.Add(field);values=values.With(field,value);if(values.ACMinGPULimitInMilliwatts>values.ACDefaultGPULimitInMilliwatts||values.ACDefaultGPULimitInMilliwatts>values.ACMaxGPULimitInMilliwatts)throw new Exception("Targeted writes crossed an incoherent intermediate state.");});if(!PlatformPowerTransaction.Same(values,expectedLow)||!fields.SequenceEqual(new[]{PcfPowerFields.ACMinGPULimit,PcfPowerFields.ACDefaultGPULimit,PcfPowerFields.ACMaxGPULimit}))throw new Exception("Targeted low-GPU companion order failed.");
+ }
+}
